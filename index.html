@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>马广军 - 总经理 | 中拓产业云</title>
+  <!-- 微信分享预览 Open Graph -->
+  <meta property="og:title" content="马广军 - 总经理 | 中拓产业云（北京）科技服务有限公司">
+  <meta property="og:description" content="中拓产业云（北京）科技服务有限公司 · 手机：18910098595">
+  <meta property="og:type" content="website">
+  <style>
+    /* ===== 重置 & 基础 ===== */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    :root {
+      --blue-deep:   #1a3a6b;
+      --blue-mid:    #1a5fb4;
+      --blue-accent: #0e90d2;
+      --gold:        #c9a84c;
+      --gold-light:  #e8c97a;
+      --bg:          #f0f4f8;
+      --card:        #ffffff;
+      --text-primary:   #1d2d44;
+      --text-secondary: #5a6a80;
+      --divider:     #dde6ef;
+    }
+    html { font-size: 16px; }
+    body {
+      font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ===== 动画 ===== */
+    @keyframes fadeSlideUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes scaleIn {
+      from { opacity: 0; transform: scale(0.85); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+    @keyframes shimmer {
+      0%   { background-position: -200% center; }
+      100% { background-position: 200% center; }
+    }
+
+    /* ===== 英雄区 ===== */
+    .hero {
+      background: linear-gradient(150deg, #0a2247 0%, #1a3a6b 40%, #0e90d2 100%);
+      padding: 48px 24px 32px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -60px; right: -60px;
+      width: 200px; height: 200px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.04);
+      pointer-events: none;
+    }
+    .hero::after {
+      content: '';
+      position: absolute;
+      bottom: -80px; left: -40px;
+      width: 260px; height: 260px;
+      border-radius: 50%;
+      background: rgba(201,168,76,0.08);
+      pointer-events: none;
+    }
+
+    /* 公司徽标 */
+    .company-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(201,168,76,0.4);
+      border-radius: 24px;
+      padding: 6px 16px;
+      margin-bottom: 28px;
+      animation: fadeSlideUp 0.5s ease both;
+    }
+    .badge-logo {
+      width: 28px; height: 28px;
+      background: linear-gradient(135deg, var(--gold), var(--gold-light));
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 800;
+      color: var(--blue-deep);
+      flex-shrink: 0;
+      letter-spacing: -1px;
+    }
+    .badge-text {
+      font-size: 12px;
+      color: rgba(255,255,255,0.85);
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    /* 头像 */
+    .avatar-wrap {
+      animation: scaleIn 0.6s ease 0.1s both;
+      margin-bottom: 20px;
+    }
+    .avatar {
+      width: 90px; height: 90px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--gold) 0%, var(--gold-light) 100%);
+      border: 3px solid rgba(255,255,255,0.3);
+      box-shadow: 0 0 0 4px rgba(201,168,76,0.35), 0 12px 32px rgba(0,0,0,0.35);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto;
+      font-size: 2.4rem;
+      font-weight: 700;
+      color: var(--blue-deep);
+    }
+
+    /* 姓名职务 */
+    .profile-name {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 3px;
+      margin-bottom: 10px;
+      animation: fadeSlideUp 0.5s ease 0.2s both;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    }
+    .title-badge {
+      display: inline-block;
+      background: linear-gradient(90deg, var(--gold), var(--gold-light), var(--gold));
+      background-size: 200% auto;
+      animation: fadeSlideUp 0.5s ease 0.3s both, shimmer 3s linear 1s infinite;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: 2px;
+    }
+
+    /* ===== 联系操作区 ===== */
+    .contact-section {
+      padding: 0 20px;
+      margin-top: -1px;
+      background: linear-gradient(150deg, #0a2247 0%, #1a3a6b 40%, #0e90d2 100%);
+      padding-bottom: 32px;
+      animation: fadeSlideUp 0.5s ease 0.4s both;
+    }
+    .contact-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+    .contact-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px 10px;
+      border-radius: 12px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      border: none;
+      font-family: inherit;
+      transition: transform 0.15s, box-shadow 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .contact-btn:active { transform: scale(0.96); }
+    .btn-phone {
+      background: rgba(255,255,255,0.15);
+      color: #ffffff;
+      border: 1px solid rgba(255,255,255,0.35);
+    }
+    .btn-save {
+      background: linear-gradient(135deg, var(--gold), var(--gold-light));
+      color: var(--blue-deep);
+      box-shadow: 0 4px 16px rgba(201,168,76,0.45);
+    }
+    .contact-btn .icon { font-size: 1.1rem; }
+
+    /* 保存提示 */
+    .save-tip {
+      text-align: center;
+      font-size: 0.72rem;
+      color: rgba(255,255,255,0.55);
+      margin-top: 10px;
+      display: none;
+      max-width: 400px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .save-tip.visible { display: block; }
+
+    /* ===== 公司信息栏 ===== */
+    .company-bar {
+      background: var(--card);
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--divider);
+      animation: fadeSlideUp 0.5s ease 0.5s both;
+    }
+    .company-full-name {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--blue-deep);
+      line-height: 1.5;
+      margin-bottom: 6px;
+    }
+    .company-meta {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .meta-dot {
+      width: 4px; height: 4px;
+      border-radius: 50%;
+      background: var(--gold);
+      flex-shrink: 0;
+    }
+
+    /* ===== 介绍区通用 ===== */
+    .about-section {
+      padding: 20px 16px 32px;
+    }
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+      padding-left: 4px;
+    }
+    .section-accent {
+      width: 4px; height: 22px;
+      border-radius: 2px;
+      background: linear-gradient(180deg, var(--gold), var(--blue-accent));
+      flex-shrink: 0;
+    }
+    .section-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--blue-deep);
+      letter-spacing: 1px;
+    }
+
+    /* ===== 简介卡片 ===== */
+    .intro-card {
+      background: var(--card);
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 14px;
+      box-shadow: 0 2px 16px rgba(26,58,107,0.07);
+      border: 1px solid rgba(26,58,107,0.06);
+      animation: fadeSlideUp 0.5s ease 0.6s both;
+    }
+    .intro-text {
+      font-size: 0.88rem;
+      line-height: 1.85;
+      color: var(--text-secondary);
+    }
+    .intro-tags {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+    .intro-tag {
+      background: #eef4fc;
+      color: var(--blue-mid);
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid rgba(14,144,210,0.2);
+    }
+
+    /* ===== 愿景 & 使命卡片 ===== */
+    .vm-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .vm-card {
+      background: var(--card);
+      border-radius: 14px;
+      padding: 18px 14px;
+      box-shadow: 0 2px 16px rgba(26,58,107,0.07);
+      border: 1px solid rgba(26,58,107,0.06);
+      text-align: center;
+    }
+    .vm-card:nth-child(1) { animation: fadeSlideUp 0.5s ease 0.7s both; }
+    .vm-card:nth-child(2) { animation: fadeSlideUp 0.5s ease 0.8s both; }
+    .vm-icon {
+      font-size: 2rem;
+      margin-bottom: 10px;
+      display: block;
+    }
+    .vm-label {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--blue-deep);
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+    .vm-text {
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    /* ===== 使命卡片（全宽） ===== */
+    .mission-card {
+      background: linear-gradient(135deg, #eef4fc 0%, #f5f0e8 100%);
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 14px;
+      border: 1px solid rgba(201,168,76,0.2);
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      animation: fadeSlideUp 0.5s ease 0.75s both;
+      box-shadow: 0 2px 16px rgba(26,58,107,0.07);
+    }
+    .mission-icon-wrap {
+      width: 44px; height: 44px;
+      background: linear-gradient(135deg, var(--blue-deep), var(--blue-accent));
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem;
+      flex-shrink: 0;
+    }
+    .mission-content { flex: 1; }
+    .mission-label {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--blue-deep);
+      letter-spacing: 1px;
+      margin-bottom: 6px;
+    }
+    .mission-text {
+      font-size: 0.83rem;
+      color: var(--text-secondary);
+      line-height: 1.7;
+    }
+
+    /* ===== 价值观网格 ===== */
+    .values-card {
+      background: var(--card);
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: 0 2px 16px rgba(26,58,107,0.07);
+      border: 1px solid rgba(26,58,107,0.06);
+      animation: fadeSlideUp 0.5s ease 0.9s both;
+      margin-bottom: 14px;
+    }
+    .values-header {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--blue-deep);
+      letter-spacing: 1px;
+      margin-bottom: 16px;
+      padding-left: 8px;
+      border-left: 3px solid var(--gold);
+    }
+    .values-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .value-item {
+      background: linear-gradient(135deg, #f5f8ff 0%, #fdf9f2 100%);
+      border: 1px solid rgba(14,144,210,0.12);
+      border-radius: 10px;
+      padding: 14px 10px 12px;
+      text-align: center;
+      transition: transform 0.15s;
+    }
+    .value-item:active { transform: scale(0.97); }
+    .value-icon {
+      font-size: 1.5rem;
+      display: block;
+      margin-bottom: 6px;
+    }
+    .value-name {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--blue-deep);
+      margin-bottom: 4px;
+    }
+    .value-desc {
+      font-size: 0.68rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    /* ===== 分割线 ===== */
+    .gradient-divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--divider), transparent);
+      margin: 6px 0 20px;
+    }
+
+    /* ===== 页脚 ===== */
+    footer {
+      text-align: center;
+      padding: 24px 20px 36px;
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      line-height: 1.8;
+    }
+    .footer-logo {
+      display: inline-block;
+      font-weight: 700;
+      color: var(--blue-deep);
+      font-size: 0.78rem;
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 英雄区 -->
+  <section class="hero">
+    <div class="company-badge">
+      <div class="badge-logo">中拓</div>
+      <span class="badge-text">中拓产业云（北京）科技服务有限公司</span>
+    </div>
+    <div class="avatar-wrap">
+      <div class="avatar">马</div>
+    </div>
+    <h1 class="profile-name">马广军</h1>
+    <p class="title-badge">总经理</p>
+  </section>
+
+  <!-- 联系操作区 -->
+  <div class="contact-section">
+    <div class="contact-grid">
+      <a class="contact-btn btn-phone" href="tel:18910098595">
+        <span class="icon">📞</span> 18910098595
+      </a>
+      <button class="contact-btn btn-save" onclick="saveContact()">
+        <span class="icon">💾</span> 保存联系人
+      </button>
+    </div>
+    <p class="save-tip" id="saveTip">请在弹出页面点击「添加联系人」以完成保存</p>
+  </div>
+
+  <!-- 公司信息栏 -->
+  <div class="company-bar">
+    <div class="company-full-name">中拓产业云（北京）科技服务有限公司</div>
+    <div class="company-meta">
+      <span>成立于 2021年2月</span>
+      <div class="meta-dot"></div>
+      <span>中孵高科 × 拓尔思 战略合资</span>
+      <div class="meta-dot"></div>
+      <span>产业数字化服务商</span>
+    </div>
+  </div>
+
+  <!-- 公司介绍 -->
+  <div class="about-section">
+
+    <!-- 公司简介 -->
+    <div class="section-header">
+      <div class="section-accent"></div>
+      <span class="section-title">公司简介</span>
+    </div>
+    <div class="intro-card">
+      <p class="intro-text">
+        中拓产业云（北京）科技服务有限公司，成立于 2021 年 2 月，是产业孵化领域领军企业「中孵高科」和国内第一家上市的大数据公司「拓尔思」的合资公司，致力于将业务力与技术力深度融合，面向产业孵化领域打造数字化应用。
+      </p>
+      <div class="intro-tags">
+        <span class="intro-tag">产业孵化</span>
+        <span class="intro-tag">大数据</span>
+        <span class="intro-tag">人工智能</span>
+        <span class="intro-tag">数字化转型</span>
+      </div>
+    </div>
+
+    <!-- 愿景 -->
+    <div class="section-header" style="margin-top:6px;">
+      <div class="section-accent"></div>
+      <span class="section-title">愿景 &amp; 使命</span>
+    </div>
+    <div class="vm-grid">
+      <div class="vm-card">
+        <span class="vm-icon">🌐</span>
+        <div class="vm-label">愿景</div>
+        <div class="vm-text">成为人工智能时代的产业服务提供商</div>
+      </div>
+      <div class="vm-card" style="background:linear-gradient(135deg,#fff,#eef4fc);">
+        <span class="vm-icon">🚀</span>
+        <div class="vm-label">使命</div>
+        <div class="vm-text">将中孵高科的业务力和拓尔思的技术力紧密结合，面向产业孵化领域打造数字化应用</div>
+      </div>
+    </div>
+
+    <!-- 价值观 -->
+    <div class="section-header" style="margin-top:6px;">
+      <div class="section-accent"></div>
+      <span class="section-title">价值观</span>
+    </div>
+    <div class="values-card">
+      <div class="values-grid">
+        <div class="value-item">
+          <span class="value-icon">⭐</span>
+          <div class="value-name">品格第一</div>
+          <div class="value-desc">人品胜于能力，大局观念，利他之心</div>
+        </div>
+        <div class="value-item">
+          <span class="value-icon">💡</span>
+          <div class="value-name">求实创新</div>
+          <div class="value-desc">基于实用主义追求创新，注重差异化</div>
+        </div>
+        <div class="value-item">
+          <span class="value-icon">🎯</span>
+          <div class="value-name">目标导向</div>
+          <div class="value-desc">凡事以终为始，严格贯彻 OKR 理念</div>
+        </div>
+        <div class="value-item">
+          <span class="value-icon">🔗</span>
+          <div class="value-name">业技融合</div>
+          <div class="value-desc">数字化人才是业务与技术的融合体</div>
+        </div>
+        <div class="value-item">
+          <span class="value-icon">♻️</span>
+          <div class="value-name">精益思想</div>
+          <div class="value-desc">精益创业、敏捷开发，成本最小化</div>
+        </div>
+        <div class="value-item">
+          <span class="value-icon">🤝</span>
+          <div class="value-name">服务精神</div>
+          <div class="value-desc">服务才是最终形态，AI 助力实现</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 页脚 -->
+  <footer>
+    <div class="footer-logo">中拓产业云（北京）科技服务有限公司</div><br>
+    © 2021 – 2026 &nbsp;·&nbsp; All Rights Reserved
+  </footer>
+
+  <script>
+    function saveContact() {
+      var vcard = [
+        'BEGIN:VCARD',
+        'VERSION:3.0',
+        'FN:马广军',
+        'N:马;广军;;;',
+        'TITLE:总经理',
+        'ORG:中拓产业云（北京）科技服务有限公司',
+        'TEL;TYPE=CELL:18910098595',
+        'END:VCARD'
+      ].join('\r\n');
+
+      var tip = document.getElementById('saveTip');
+
+      try {
+        // 方案1：Blob 下载（Android 微信 / 普通浏览器）
+        var blob = new Blob([vcard], { type: 'text/vcard;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'MaGuangJun.vcf';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function() { URL.revokeObjectURL(url); }, 2000);
+        tip.classList.add('visible');
+        setTimeout(function() { tip.classList.remove('visible'); }, 4000);
+      } catch (e) {
+        // 方案2：data URI 回退（iOS 微信）
+        try {
+          window.location.href = 'data:text/vcard;charset=utf-8,' + encodeURIComponent(vcard);
+          tip.classList.add('visible');
+          setTimeout(function() { tip.classList.remove('visible'); }, 4000);
+        } catch (e2) {
+          alert('请长按手机号码手动添加联系人：18910098595');
+        }
+      }
+    }
+  </script>
+</body>
+</html>
