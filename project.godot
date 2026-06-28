@@ -18,6 +18,7 @@ config/icon="res://assets/icon.svg"
 
 FlightData="*res://src/systems/FlightData.gd"
 Atmosphere="*res://src/systems/Atmosphere.gd"
+AudioManager="*res://src/systems/AudioManager.gd"
 
 [display]
 
