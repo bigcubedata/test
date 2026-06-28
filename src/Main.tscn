@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://src/world/CameraController.gd" id="4_camera"]
 [ext_resource type="Script" path="res://src/ui/PFD.gd" id="5_pfd"]
 [ext_resource type="Script" path="res://src/ui/EngineStrip.gd" id="6_eis"]
+[ext_resource type="Script" path="res://src/ui/OverlayManager.gd" id="7_overlay"]
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1_main")
@@ -24,6 +25,9 @@ script = ExtResource("4_camera")
 target_path = NodePath("../Aircraft")
 
 [node name="UI" type="CanvasLayer" parent="."]
+script = ExtResource("7_overlay")
+camera_path = NodePath("../Camera3D")
+hide_in_cockpit = [NodePath("PFD"), NodePath("EngineStrip")]
 
 [node name="PFD" type="Control" parent="UI"]
 anchor_top = 1.0

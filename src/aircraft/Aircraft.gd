@@ -332,6 +332,8 @@ func _publish_flight_data(state: PhysicsDirectBodyState3D, airspeed: float,
 	FlightData.manifold_pressure_inhg = engine.manifold_pressure(alt_m)
 	FlightData.oil_temp_c = lerpf(40.0, 95.0, clampf(engine.rpm / C172Engine.MAX_RPM, 0.0, 1.0))
 	FlightData.on_ground = on_ground
+	FlightData.pos_x = state.transform.origin.x
+	FlightData.pos_z = state.transform.origin.z
 
 	# Stall warning fires a few knots above the actual stall (like the reed horn).
 	FlightData.stall_warning = absf(alpha) > (ALPHA_STALL - 0.05) and airspeed > 2.0

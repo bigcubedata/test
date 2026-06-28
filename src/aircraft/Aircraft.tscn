@@ -1,6 +1,7 @@
-[gd_scene load_steps=14 format=3 uid="uid://c172s_aircraft"]
+[gd_scene load_steps=15 format=3 uid="uid://c172s_aircraft"]
 
 [ext_resource type="Script" path="res://src/aircraft/Aircraft.gd" id="1_aircraft"]
+[ext_resource type="Script" path="res://src/aircraft/Cockpit.gd" id="2_cockpit"]
 
 [sub_resource type="StandardMaterial3D" id="mat_white"]
 albedo_color = Color(0.92, 0.92, 0.94, 1)
@@ -94,3 +95,7 @@ surface_material_override/0 = SubResource("mat_dark")
 shape = SubResource("shape_body")
 
 [node name="CameraRig" type="Node3D" parent="."]
+
+[node name="Cockpit" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.22, 0.45, -1.0)
+script = ExtResource("2_cockpit")

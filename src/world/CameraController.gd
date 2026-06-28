@@ -10,11 +10,11 @@ extends Camera3D
 @export var target_path: NodePath
 var target: Node3D
 
-enum View { CHASE, COCKPIT, WING, TOWER }
-var view: int = View.CHASE
+enum View { COCKPIT, CHASE, WING, TOWER }
+var view: int = View.COCKPIT
 
-const CHASE_OFFSET := Vector3(0.0, 3.5, 13.0)   # behind & above (in body space)
-const COCKPIT_OFFSET := Vector3(0.0, 0.9, -1.4) # pilot eye point
+const CHASE_OFFSET := Vector3(0.0, 3.5, 13.0)    # behind & above (in body space)
+const COCKPIT_OFFSET := Vector3(-0.22, 0.45, -1.0) # pilot eye point (matches Cockpit node)
 const WING_OFFSET := Vector3(-8.0, 1.5, 0.0)
 var _tower_pos := Vector3(40.0, 12.0, 60.0)
 var _chase_pos: Vector3
@@ -45,10 +45,12 @@ func _physics_process(delta: float) -> void:
 			global_position = _chase_pos
 			look_at(tx.origin + tx.basis * Vector3(0, 0.5, -4.0), tx.basis.y)
 		View.COCKPIT:
-			global_transform = tx
+			# Sit at the pilot eye point and look forward over the glareshield,
+			# with a slight downward angle so the panel is in view.
 			global_position = tx * COCKPIT_OFFSET
-			# Look forward along the nose with a slight down angle.
-			look_at(tx * Vector3(0, 0.7, -30.0), tx.basis.y)
+			# Look ~17 deg down so the panel fills the lower third and the
+			# horizon sits in the upper third.
+			look_at(tx * Vector3(-0.22, -2.0, -8.0), tx.basis.y)
 		View.WING:
 			global_position = tx * WING_OFFSET
 			look_at(tx.origin, Vector3.UP)
