@@ -12,31 +12,56 @@ extends Node3D
 
 const PFD_SCRIPT := preload("res://src/ui/PFD.gd")
 const MFD_SCRIPT := preload("res://src/ui/MFD.gd")
+const STANDBY_SCRIPT := preload("res://src/ui/StandbyGauges.gd")
+const COMPASS_SCRIPT := preload("res://src/ui/Compass.gd")
 
 var _aircraft: Node
 var _yoke: Node3D
 var _yoke_l: Node3D
+var _panel_normal: Texture2D
+var _leather_normal: Texture2D
 
 
 func _ready() -> void:
 	_aircraft = get_parent()
+	_panel_normal = _noise_normal(0.08, 5.0)    # fine moulded-plastic grain
+	_leather_normal = _noise_normal(0.025, 11.0) # coarse padded-leather grain
 	_build_structure()
 	_build_panel()
 	_build_screens()
 	_build_yokes()
 	_build_pedestal()
+	_build_controls()
 	_build_lighting()
 
 
 # --------------------------------------------------------------------------
 #  Helpers
 # --------------------------------------------------------------------------
-func _mat(color: Color, rough := 0.6, metal := 0.0) -> StandardMaterial3D:
+func _mat(color: Color, rough := 0.6, metal := 0.0, normal: Texture2D = null, normal_scale := 0.5) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = color
 	m.roughness = rough
 	m.metallic = metal
+	if normal:
+		m.normal_enabled = true
+		m.normal_texture = normal
+		m.normal_scale = normal_scale
 	return m
+
+## Procedural tiling normal map from value noise, for surface relief/texture.
+func _noise_normal(freq: float, strength: float) -> Texture2D:
+	var n := FastNoiseLite.new()
+	n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	n.frequency = freq
+	var t := NoiseTexture2D.new()
+	t.width = 256
+	t.height = 256
+	t.seamless = true
+	t.as_normal_map = true
+	t.bump_strength = strength
+	t.noise = n
+	return t
 
 func _box(sz: Vector3, pos: Vector3, mat: StandardMaterial3D, rot := Vector3.ZERO, parent: Node = null) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
@@ -67,8 +92,8 @@ func _cyl(radius: float, height: float, pos: Vector3, mat: StandardMaterial3D, r
 #  Cabin shell: posts, window frames, side walls
 # --------------------------------------------------------------------------
 func _build_structure() -> void:
-	var white := _mat(Color(0.82, 0.82, 0.84), 0.8)
-	var grey := _mat(Color(0.5, 0.5, 0.53), 0.85)
+	var white := _mat(Color(0.82, 0.82, 0.84), 0.8, 0.0, _panel_normal, 0.25)
+	var grey := _mat(Color(0.5, 0.5, 0.53), 0.85, 0.0, _leather_normal, 0.4)
 
 	# Left / right windshield posts (A-pillars), leaning forward and outboard.
 	_box(Vector3(0.05, 0.8, 0.05), Vector3(-0.6, 0.22, -0.74), white, Vector3(-0.45, 0.0, 0.18))
@@ -91,8 +116,8 @@ func _build_structure() -> void:
 #  Instrument panel + glareshield
 # --------------------------------------------------------------------------
 func _build_panel() -> void:
-	var panel_mat := _mat(Color(0.10, 0.10, 0.11), 0.7)
-	var coam := _mat(Color(0.05, 0.05, 0.055), 0.9)
+	var panel_mat := _mat(Color(0.10, 0.10, 0.11), 0.7, 0.0, _panel_normal, 0.4)
+	var coam := _mat(Color(0.05, 0.05, 0.055), 0.95, 0.0, _leather_normal, 0.8)
 	var tilt := Vector3(-0.18, 0.0, 0.0)  # top tilts away from pilot
 
 	# Main panel slab.
@@ -113,6 +138,10 @@ func _build_screens() -> void:
 	# PFD in front of the pilot, MFD to its right (centre stack).
 	_make_screen(PFD_SCRIPT, Vector3(-0.07, -0.31, -0.625), 0.33, 0.25, tilt)
 	_make_screen(MFD_SCRIPT, Vector3(0.37, -0.31, -0.625), 0.33, 0.25, tilt)
+	# Standby steam gauges (ASI/AI/ALT) to the left of the PFD.
+	_make_screen(STANDBY_SCRIPT, Vector3(-0.30, -0.31, -0.625), 0.10, 0.27, tilt, Vector2i(384, 1024))
+	# Wet magnetic compass on top of the glareshield.
+	_make_screen(COMPASS_SCRIPT, Vector3(0.15, -0.02, -0.60), 0.15, 0.07, Vector3(-0.4, 0, 0), Vector2i(512, 256))
 	# Avionics / radio stack between and below the screens.
 	var stack := _mat(Color(0.07, 0.07, 0.08), 0.6)
 	_box(Vector3(0.10, 0.36, 0.03), Vector3(0.15, -0.32, -0.632), stack, tilt)
@@ -121,7 +150,7 @@ func _build_screens() -> void:
 		_box(Vector3(0.07, 0.016, 0.01), Vector3(0.15, -0.22 - i * 0.04, -0.648), btn, tilt)
 
 
-func _make_screen(ui_script: Script, pos: Vector3, w: float, h: float, rot: Vector3) -> void:
+func _make_screen(ui_script: Script, pos: Vector3, w: float, h: float, rot: Vector3, vp_size := Vector2i(1024, 768)) -> void:
 	# Bezel sits BEHIND the glass quad (toward the panel) so it frames, not
 	# occludes, the display.
 	var bezel := _mat(Color(0.02, 0.02, 0.02), 0.5)
@@ -129,7 +158,7 @@ func _make_screen(ui_script: Script, pos: Vector3, w: float, h: float, rot: Vect
 
 	# SubViewport rendering the instrument Control.
 	var sv := SubViewport.new()
-	sv.size = Vector2i(1024, 768)
+	sv.size = vp_size
 	sv.disable_3d = true
 	sv.transparent_bg = false
 	sv.render_target_update_mode = SubViewport.UPDATE_ALWAYS
@@ -137,7 +166,7 @@ func _make_screen(ui_script: Script, pos: Vector3, w: float, h: float, rot: Vect
 	add_child(sv)
 	var ui := Control.new()
 	ui.set_script(ui_script)
-	ui.size = Vector2(1024, 768)
+	ui.size = Vector2(vp_size)
 	ui.set_anchors_preset(Control.PRESET_FULL_RECT)
 	sv.add_child(ui)
 
@@ -193,6 +222,27 @@ func _build_pedestal() -> void:
 	var red := _mat(Color(0.6, 0.05, 0.05), 0.4)
 	_cyl(0.018, 0.12, Vector3(0.18, -0.46, -0.36), black, Vector3(0.5, 0, 0))
 	_cyl(0.016, 0.10, Vector3(0.27, -0.47, -0.36), red, Vector3(0.5, 0, 0))
+
+
+func _build_controls() -> void:
+	# Flap selector lever (right of the pedestal, with detent gate).
+	var metal := _mat(Color(0.3, 0.3, 0.33), 0.4, 0.6)
+	var white := _mat(Color(0.85, 0.85, 0.88), 0.5)
+	_box(Vector3(0.03, 0.12, 0.06), Vector3(0.48, -0.58, -0.46), metal)  # gate plate
+	var flap_lever := _box(Vector3(0.014, 0.11, 0.014), Vector3(0.48, -0.52, -0.44), metal, Vector3(-0.3, 0, 0))
+	_box(Vector3(0.03, 0.03, 0.03), Vector3(0, 0.06, 0.0), white, Vector3.ZERO, flap_lever)  # knob
+
+	# Row of toggle switches along the lower sub-panel.
+	var sw_base := _mat(Color(0.06, 0.06, 0.07), 0.6)
+	var sw := _mat(Color(0.7, 0.7, 0.72), 0.4, 0.5)
+	for i in range(6):
+		var x := -0.12 + i * 0.05
+		_box(Vector3(0.02, 0.02, 0.012), Vector3(x, -0.60, -0.55), sw_base)
+		_box(Vector3(0.008, 0.03, 0.008), Vector3(x, -0.585, -0.555), sw, Vector3(-0.4, 0, 0))
+
+	# Ignition / magneto key barrel on the far left.
+	var black := _mat(Color(0.03, 0.03, 0.035), 0.5, 0.3)
+	_cyl(0.018, 0.03, Vector3(-0.36, -0.60, -0.52), black, Vector3(0.4, 0, 0))
 
 
 func _build_lighting() -> void:

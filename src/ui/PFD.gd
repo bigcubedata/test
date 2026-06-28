@@ -26,9 +26,14 @@ const C_WHITE := Color(1, 1, 1)
 const C_BLACK := Color(0, 0, 0)
 const C_YELLOW := Color(1.0, 0.85, 0.0)
 
-const PX_PER_DEG := 6.5    # pitch ladder scale
-const PX_PER_KT := 4.2     # airspeed tape scale
-const PX_PER_100FT := 62.0 # altitude tape scale
+# Instrument scales (pixels). Recomputed each frame from the display height so
+# the PFD looks identical whether drawn into the small 2D overlay or the larger
+# 1024x768 cockpit-panel SubViewport.
+const REF_H := 480.0       # layout reference height
+var _pd := 6.5             # pitch ladder px/deg
+var _pk := 4.2             # airspeed tape px/kt
+var _pa := 62.0            # altitude tape px/100ft
+var _u := 1.0              # overall scale factor (size.y / REF_H)
 
 var _font: Font
 
@@ -44,6 +49,10 @@ func _process(_delta: float) -> void:
 
 func _draw() -> void:
 	var s := size
+	_u = s.y / REF_H
+	_pd = 6.5 * _u
+	_pk = 4.2 * _u
+	_pa = 62.0 * _u
 	# Overall PFD background.
 	draw_rect(Rect2(Vector2.ZERO, s), Color(0.04, 0.04, 0.05))
 
@@ -65,7 +74,7 @@ func _draw_attitude(rect: Rect2) -> void:
 	var roll := FlightData.roll_deg
 
 	draw_set_transform(center, deg_to_rad(-roll), Vector2.ONE)
-	var pitch_offset := pitch * PX_PER_DEG
+	var pitch_offset := pitch * _pd
 	var big := maxf(rect.size.x, rect.size.y) * 2.0
 
 	# Sky and ground halves (oversized so they fill when banked).
@@ -77,7 +86,7 @@ func _draw_attitude(rect: Rect2) -> void:
 	for deg in range(-90, 91, 10):
 		if deg == 0:
 			continue
-		var y := -deg * PX_PER_DEG + pitch_offset
+		var y := -deg * _pd + pitch_offset
 		if absf(y - pitch_offset) > rect.size.y:
 			continue
 		var half := 46.0 if absi(deg) % 20 == 0 else 26.0
@@ -87,7 +96,7 @@ func _draw_attitude(rect: Rect2) -> void:
 		_text(Vector2(half + 6, y + 6), label, 16, C_WHITE)
 	# Minor 5-degree ticks.
 	for deg in range(-85, 86, 10):
-		var y := -deg * PX_PER_DEG + pitch_offset
+		var y := -deg * _pd + pitch_offset
 		if absf(y - pitch_offset) > rect.size.y:
 			continue
 		draw_line(Vector2(-14, y), Vector2(14, y), C_HORIZON, 1.0)
@@ -104,12 +113,13 @@ func _draw_attitude(rect: Rect2) -> void:
 	# Slip/skid trapezoid under the pointer.
 	_draw_slip_skid(center, rect.size.y * 0.46)
 
-	# Fixed aircraft reference symbol (yellow wings + dot).
-	draw_line(Vector2(center.x - 70, center.y), Vector2(center.x - 20, center.y), C_YELLOW, 4.0)
-	draw_line(Vector2(center.x + 20, center.y), Vector2(center.x + 70, center.y), C_YELLOW, 4.0)
-	draw_line(Vector2(center.x - 20, center.y), Vector2(center.x - 20, center.y + 12), C_YELLOW, 4.0)
-	draw_line(Vector2(center.x + 20, center.y), Vector2(center.x + 20, center.y + 12), C_YELLOW, 4.0)
-	draw_rect(Rect2(center.x - 4, center.y - 4, 8, 8), C_YELLOW)
+	# Fixed aircraft reference symbol (yellow wings + dot), scaled to the panel.
+	var w := 4.0 * _u
+	draw_line(Vector2(center.x - 70 * _u, center.y), Vector2(center.x - 20 * _u, center.y), C_YELLOW, w)
+	draw_line(Vector2(center.x + 20 * _u, center.y), Vector2(center.x + 70 * _u, center.y), C_YELLOW, w)
+	draw_line(Vector2(center.x - 20 * _u, center.y), Vector2(center.x - 20 * _u, center.y + 12 * _u), C_YELLOW, w)
+	draw_line(Vector2(center.x + 20 * _u, center.y), Vector2(center.x + 20 * _u, center.y + 12 * _u), C_YELLOW, w)
+	draw_rect(Rect2(center.x - 4 * _u, center.y - 4 * _u, 8 * _u, 8 * _u), C_YELLOW)
 
 	draw_rect(rect, Color(0.6, 0.6, 0.6), false, 2.0)
 
@@ -167,12 +177,12 @@ func _draw_airspeed_tape(rect: Rect2) -> void:
 	_speed_band(rect, FlightData.VNE, FlightData.VNE + 30, C_RED, ias, cy, 7.0) # red line region
 
 	# Moving scale: a tick + label every 10 kt.
-	var top_speed := ias + (rect.size.y * 0.5) / PX_PER_KT
-	var low_speed := ias - (rect.size.y * 0.5) / PX_PER_KT
+	var top_speed := ias + (rect.size.y * 0.5) / _pk
+	var low_speed := ias - (rect.size.y * 0.5) / _pk
 	var v := int(floor(low_speed / 10.0) * 10)
 	while v <= int(top_speed) + 10:
 		if v >= 20:
-			var y := cy - (v - ias) * PX_PER_KT
+			var y := cy - (v - ias) * _pk
 			if y > rect.position.y and y < rect.position.y + rect.size.y:
 				draw_line(Vector2(cx - 12, y), Vector2(cx, y), C_WHITE, 1.5)
 				_text(Vector2(rect.position.x + 6, y + 6), str(v), 17, C_WHITE)
@@ -192,8 +202,8 @@ func _draw_airspeed_tape(rect: Rect2) -> void:
 
 func _speed_band(rect: Rect2, lo: float, hi: float, col: Color, ias: float, cy: float, w: float) -> void:
 	var x := rect.position.x + rect.size.x - w
-	var y_lo := cy - (lo - ias) * PX_PER_KT
-	var y_hi := cy - (hi - ias) * PX_PER_KT
+	var y_lo := cy - (lo - ias) * _pk
+	var y_hi := cy - (hi - ias) * _pk
 	var top := clampf(minf(y_lo, y_hi), rect.position.y, rect.position.y + rect.size.y)
 	var bot := clampf(maxf(y_lo, y_hi), rect.position.y, rect.position.y + rect.size.y)
 	if bot - top > 0.5:
@@ -209,11 +219,11 @@ func _draw_altitude_tape(rect: Rect2) -> void:
 	var cy := rect.position.y + rect.size.y * 0.5
 	var alt: float = FlightData.altitude_ft
 
-	var span_ft := (rect.size.y * 0.5) / PX_PER_100FT * 100.0
+	var span_ft := (rect.size.y * 0.5) / _pa * 100.0
 	var top_alt := alt + span_ft
 	var a := int(floor((alt - span_ft) / 100.0) * 100)
 	while a <= int(top_alt) + 100:
-		var y := cy - (a - alt) * (PX_PER_100FT / 100.0)
+		var y := cy - (a - alt) * (_pa / 100.0)
 		if y > rect.position.y and y < rect.position.y + rect.size.y:
 			draw_line(Vector2(cx, y), Vector2(cx + 12, y), C_WHITE, 1.5)
 			if a % 500 == 0:
@@ -316,7 +326,7 @@ func _draw_annunciations(s: Vector2) -> void:
 #  Helpers
 # --------------------------------------------------------------------------
 func _text(pos: Vector2, text: String, font_size: int, color: Color) -> void:
-	draw_string(_font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
+	draw_string(_font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, roundi(font_size * _u), color)
 
 
 func _mask_outside(rect: Rect2) -> void:
