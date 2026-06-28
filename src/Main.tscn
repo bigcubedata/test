@@ -1,0 +1,58 @@
+[gd_scene load_steps=8 format=3 uid="uid://c172s_main"]
+
+[ext_resource type="Script" path="res://src/Main.gd" id="1_main"]
+[ext_resource type="PackedScene" uid="uid://c172s_world" path="res://src/world/World.tscn" id="2_world"]
+[ext_resource type="PackedScene" uid="uid://c172s_aircraft" path="res://src/aircraft/Aircraft.tscn" id="3_aircraft"]
+[ext_resource type="Script" path="res://src/world/CameraController.gd" id="4_camera"]
+[ext_resource type="Script" path="res://src/ui/PFD.gd" id="5_pfd"]
+[ext_resource type="Script" path="res://src/ui/EngineStrip.gd" id="6_eis"]
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="World" parent="." instance=ExtResource("2_world")]
+
+[node name="Aircraft" parent="." instance=ExtResource("3_aircraft")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, 480)
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5, 495)
+fov = 65.0
+near = 0.1
+far = 40000.0
+script = ExtResource("4_camera")
+target_path = NodePath("../Aircraft")
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="PFD" type="Control" parent="UI"]
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 18.0
+offset_top = -468.0
+offset_right = 610.0
+offset_bottom = -18.0
+script = ExtResource("5_pfd")
+
+[node name="EngineStrip" type="Control" parent="UI"]
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 622.0
+offset_top = -468.0
+offset_right = 822.0
+offset_bottom = -318.0
+script = ExtResource("6_eis")
+
+[node name="Help" type="Label" parent="UI"]
+offset_left = 18.0
+offset_top = 14.0
+offset_right = 620.0
+offset_bottom = 160.0
+text = "CESSNA 172S G1000  —  CONTROLS
+Pitch: Up/Down arrows    Roll: Left/Right arrows    Yaw: Z / X
+Throttle: Page Up / Page Down    Trim: , / .
+Flaps: F (down) / G (up)    Brakes: B    View: C    Reset: R"
+theme_override_font_sizes/font_size = 15
+theme_override_colors/font_color = Color(1, 1, 1, 0.9)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.8)
+theme_override_constants/outline_size = 4

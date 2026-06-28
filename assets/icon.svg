@@ -1,0 +1,17 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <rect width="128" height="128" rx="20" fill="#1b3a5c"/>
+  <g fill="#e8eef5">
+    <!-- fuselage -->
+    <rect x="60" y="22" width="8" height="84" rx="4"/>
+    <!-- high wing -->
+    <rect x="20" y="48" width="88" height="9" rx="4"/>
+    <!-- tailplane -->
+    <rect x="44" y="94" width="40" height="7" rx="3"/>
+    <!-- vertical fin -->
+    <rect x="60" y="86" width="8" height="20" rx="3"/>
+    <!-- prop spinner -->
+    <circle cx="64" cy="24" r="6"/>
+  </g>
+  <text x="64" y="120" font-family="Helvetica, Arial, sans-serif" font-size="13"
+        fill="#9fd0ff" text-anchor="middle" font-weight="bold">172S</text>
+</svg>
