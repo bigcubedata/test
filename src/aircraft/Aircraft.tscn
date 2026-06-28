@@ -3,6 +3,7 @@
 [ext_resource type="Script" path="res://src/aircraft/Aircraft.gd" id="1_aircraft"]
 [ext_resource type="Script" path="res://src/aircraft/Cockpit.gd" id="2_cockpit"]
 [ext_resource type="Script" path="res://src/aircraft/Propeller.gd" id="3_prop"]
+[ext_resource type="Script" path="res://src/aircraft/Airframe.gd" id="4_airframe"]
 
 [sub_resource type="StandardMaterial3D" id="mat_white"]
 albedo_color = Color(0.92, 0.92, 0.94, 1)
@@ -53,39 +54,8 @@ size = Vector3(2.0, 1.4, 7.6)
 [node name="Aircraft" type="RigidBody3D"]
 script = ExtResource("1_aircraft")
 
-[node name="Fuselage" type="MeshInstance3D" parent="."]
-mesh = SubResource("mesh_fuse")
-surface_material_override/0 = SubResource("mat_white")
-
-[node name="Cowl" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, -4.0)
-mesh = SubResource("mesh_nose")
-surface_material_override/0 = SubResource("mat_white")
-
-[node name="Windshield" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.45, -2.5)
-mesh = SubResource("mesh_windshield")
-surface_material_override/0 = SubResource("mat_glass")
-
-[node name="Wing" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, -1.7)
-mesh = SubResource("mesh_wing")
-surface_material_override/0 = SubResource("mat_white")
-
-[node name="WingStripe" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 0.35, 0, 0.84, -1.7)
-mesh = SubResource("mesh_wing")
-surface_material_override/0 = SubResource("mat_blue")
-
-[node name="HStab" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 3.5)
-mesh = SubResource("mesh_hstab")
-surface_material_override/0 = SubResource("mat_white")
-
-[node name="VStab" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 3.6)
-mesh = SubResource("mesh_vstab")
-surface_material_override/0 = SubResource("mat_blue")
+[node name="Airframe" type="Node3D" parent="."]
+script = ExtResource("4_airframe")
 
 [node name="Propeller" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, -4.78)
