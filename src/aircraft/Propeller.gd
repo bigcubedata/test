@@ -13,35 +13,47 @@ var _arc_mat: StandardMaterial3D
 
 
 func _ready() -> void:
-	var dark := _mat(Color(0.05, 0.05, 0.06), 0.4, 0.2)
-	var spinner_mat := _mat(Color(0.75, 0.75, 0.78), 0.3, 0.7)
+	var dark := _mat(Color(0.06, 0.06, 0.07), 0.45, 0.1)
+	var tip := _mat(Color(0.95, 0.78, 0.08), 0.4, 0.1)        # painted warning tip
+	var alu := _mat(Color(0.78, 0.78, 0.81), 0.25, 0.85)      # polished spinner
 
-	# Spinner cone (points forward, -Z).
-	var spinner := _cyl(0.02, 0.16, 0.34, spinner_mat, Vector3(-PI * 0.5, 0, 0))
-	spinner.position = Vector3(0, 0, -0.1)
+	# Polished spinner cone (narrow end forward, -Z).
+	var spinner := _cyl(0.02, 0.11, 0.24, alu, Vector3(-PI * 0.5, 0, 0))
+	spinner.position = Vector3(0, 0, -0.12)
 
 	_blades = Node3D.new()
 	add_child(_blades)
 	# Hub.
-	_cyl(0.07, 0.07, 0.12, dark, Vector3(PI * 0.5, 0, 0), _blades)
-	# Two blades = one long thin slab across the hub, with a slight twist look.
-	var blade := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(0.14, 1.88, 0.03)
-	blade.mesh = bm
-	blade.material_override = dark
-	_blades.add_child(blade)
+	_cyl(0.055, 0.055, 0.09, dark, Vector3(PI * 0.5, 0, 0), _blades)
+	# Two slim, pitched blades with yellow tips (instead of one flat slab).
+	for s in [1.0, -1.0]:
+		var b := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.075, 0.84, 0.02)
+		b.mesh = bm
+		b.material_override = dark
+		b.position = Vector3(0, s * 0.50, 0)
+		b.rotation = Vector3(0, 0.30, 0)                 # blade pitch/twist
+		_blades.add_child(b)
+		var t := MeshInstance3D.new()
+		var tm := BoxMesh.new()
+		tm.size = Vector3(0.075, 0.12, 0.02)
+		t.mesh = tm
+		t.material_override = tip
+		t.position = Vector3(0, s * 0.92, 0)
+		t.rotation = Vector3(0, 0.30, 0)
+		_blades.add_child(t)
 
-	# Translucent prop-arc disc.
+	# Translucent prop-arc disc that fades in with rpm to sell the blur.
 	var arc := MeshInstance3D.new()
 	var disc := CylinderMesh.new()
-	disc.top_radius = 0.96
-	disc.bottom_radius = 0.96
+	disc.top_radius = 0.99
+	disc.bottom_radius = 0.99
 	disc.height = 0.006
 	arc.mesh = disc
 	arc.rotation = Vector3(PI * 0.5, 0, 0)
 	_arc_mat = StandardMaterial3D.new()
-	_arc_mat.albedo_color = Color(0.6, 0.6, 0.62, 0.0)
+	_arc_mat.albedo_color = Color(0.62, 0.62, 0.64, 0.0)
 	_arc_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_arc_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	arc.material_override = _arc_mat
@@ -56,7 +68,7 @@ func _process(delta: float) -> void:
 		_blades.rotation.z += rps * TAU * delta
 	if _arc_mat:
 		# Blades visible at low rpm; arc disc takes over as it spools up.
-		var a := clampf((rpm - 800.0) / 1600.0, 0.0, 1.0) * 0.22
+		var a := clampf((rpm - 500.0) / 1100.0, 0.0, 1.0) * 0.28
 		_arc_mat.albedo_color.a = a
 
 
