@@ -15,7 +15,10 @@ var target: Node3D
 var _airframe: Node3D
 
 enum View { COCKPIT, CHASE, WING, TOWER }
-var view: int = View.COCKPIT
+## External chase is the primary view (visual-flying focus); cycle with C
+## through Chase -> Wing -> Tower -> Cockpit and back.
+var view: int = View.CHASE
+const CYCLE := [View.CHASE, View.WING, View.TOWER, View.COCKPIT]
 
 const CHASE_OFFSET := Vector3(0.0, 3.5, 13.0)
 const COCKPIT_OFFSET := Vector3(-0.22, 0.57, -1.05) # pilot eye point (raised to see over the nose)
@@ -35,6 +38,7 @@ func _ready() -> void:
 	if target_path:
 		target = get_node(target_path)
 	current = true
+	add_to_group("flight_camera")
 	if target:
 		_chase_pos = target.global_position + target.global_transform.basis * CHASE_OFFSET
 		_airframe = target.get_node_or_null("Airframe")
@@ -42,7 +46,8 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	if Input.is_action_just_pressed("toggle_view"):
-		view = (view + 1) % View.size()
+		var i := CYCLE.find(view)
+		view = CYCLE[(i + 1) % CYCLE.size()]
 		_look_yaw = 0.0
 		_look_pitch = 0.0
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE

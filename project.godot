@@ -19,6 +19,7 @@ config/icon="res://assets/icon.svg"
 FlightData="*res://src/systems/FlightData.gd"
 Atmosphere="*res://src/systems/Atmosphere.gd"
 AudioManager="*res://src/systems/AudioManager.gd"
+Replay="*res://src/systems/Replay.gd"
 InputSetup="*res://src/systems/InputSetup.gd"
 
 [display]

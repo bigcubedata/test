@@ -20,6 +20,8 @@ func _ready() -> void:
 	_bind("toggle_brakes", [KEY_B])
 	_bind("toggle_view", [KEY_C])
 	_bind("reset_aircraft", [KEY_R])
+	_bind("replay_toggle", [KEY_TAB])
+	_bind("replay_pause", [KEY_SPACE])
 
 
 func _bind(action: StringName, keys: Array) -> void:

@@ -94,6 +94,7 @@ func _ready() -> void:
 	gravity_scale = 1.0
 	_spawn_transform = global_transform
 	_spawn_velocity = Vector3.ZERO
+	Replay.register(self)
 
 
 func set_spawn(xform: Transform3D, vel: Vector3) -> void:
@@ -115,6 +116,10 @@ func reset() -> void:
 
 
 func _process(_delta: float) -> void:
+	# During replay the aircraft is frozen and driven by the recorder, so the
+	# live controls (and the reset key) are inert.
+	if Replay.is_replaying():
+		return
 	_read_input()
 
 
@@ -338,3 +343,6 @@ func _publish_flight_data(state: PhysicsDirectBodyState3D, airspeed: float,
 
 	# Stall warning fires a few knots above the actual stall (like the reed horn).
 	FlightData.stall_warning = absf(alpha) > (ALPHA_STALL - 0.05) and airspeed > 2.0
+
+	# Feed the flight recorder (no-op unless we're in LIVE mode).
+	Replay.capture(state.transform)
