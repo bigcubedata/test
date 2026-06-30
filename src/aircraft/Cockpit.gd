@@ -20,6 +20,8 @@ var _yoke: Node3D
 var _yoke_l: Node3D
 var _panel_normal: Texture2D
 var _leather_normal: Texture2D
+var _screens: Array = []
+var _rebind_frames := 8
 
 
 func _ready() -> void:
@@ -177,12 +179,15 @@ func _make_screen(ui_script: Script, pos: Vector3, w: float, h: float, rot: Vect
 	mi.mesh = quad
 	var m := StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.albedo_texture = sv.get_texture()
+	m.albedo_texture = sv.get_texture()  # albedo_color stays white (it multiplies the texture)
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 	mi.material_override = m
 	mi.position = pos
 	mi.rotation = rot
 	add_child(mi)
+	# On some backends (Forward+/MoltenVK on macOS) a ViewportTexture bound on
+	# the first frame comes back blank; re-bind it for a few frames to be safe.
+	_screens.append({"m": m, "sv": sv})
 
 
 # --------------------------------------------------------------------------
@@ -256,6 +261,13 @@ func _build_lighting() -> void:
 
 
 func _process(_delta: float) -> void:
+	# Re-bind the panel-screen viewport textures for the first few frames, in
+	# case the initial bind came back blank on this graphics backend.
+	if _rebind_frames > 0:
+		_rebind_frames -= 1
+		for s in _screens:
+			s.m.albedo_texture = s.sv.get_texture()
+
 	# Animate the yokes from the live control inputs.
 	if _aircraft == null:
 		return

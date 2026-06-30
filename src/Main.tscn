@@ -54,7 +54,7 @@ offset_right = 620.0
 offset_bottom = 160.0
 text = "CESSNA 172S G1000  —  CONTROLS
 Pitch: Up/Down arrows    Roll: Left/Right arrows    Yaw: Z / X
-Throttle: Page Up / Page Down    Trim: , / .
+Throttle: = / -  (or W / S, or PgUp/PgDn)    Trim: , / .
 Flaps: F (down) / G (up)    Brakes: B    View: C    Reset: R"
 theme_override_font_sizes/font_size = 15
 theme_override_colors/font_color = Color(1, 1, 1, 0.9)
