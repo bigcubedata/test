@@ -55,7 +55,7 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, s), Color(0.02, 0.02, 0.03))
 
 	var top := 4.0 * _u
-	var att_h := s.y * 0.66
+	var att_h := s.y * 0.60
 	# Attitude sits BETWEEN the tapes so nothing bleeds through.
 	var att := Rect2(s.x * 0.145, top, s.x * 0.645, att_h)
 	_draw_attitude(att)
@@ -64,7 +64,8 @@ func _draw() -> void:
 	_draw_airspeed(Rect2(6 * _u, top, s.x * 0.135, tape_h))
 	_draw_altitude(Rect2(s.x * 0.79, top, s.x * 0.135, tape_h))
 	_draw_vsi(Rect2(s.x * 0.925 + 2, top, s.x * 0.07, tape_h))
-	_draw_hsi(Vector2(s.x * 0.5, s.y * 0.855), s.y * 0.145)
+	# HSI kept clear of the very bottom edge so it isn't clipped on the panel.
+	_draw_hsi(Vector2(s.x * 0.5, s.y * 0.80), s.y * 0.135)
 	_draw_annunciations(s)
 
 

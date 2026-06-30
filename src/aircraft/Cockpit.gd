@@ -120,12 +120,13 @@ func _build_structure() -> void:
 func _build_panel() -> void:
 	var panel_mat := _mat(Color(0.10, 0.10, 0.11), 0.7, 0.0, _panel_normal, 0.4)
 	var coam := _mat(Color(0.05, 0.05, 0.055), 0.95, 0.0, _leather_normal, 0.8)
-	var tilt := Vector3(-0.18, 0.0, 0.0)  # top tilts away from pilot
+	var tilt := Vector3(-0.10, 0.0, 0.0)  # top tilts away from pilot
 
 	# Main panel slab.
 	_box(Vector3(1.5, 0.5, 0.04), Vector3(0.15, -0.34, -0.66), panel_mat, tilt)
-	# Lower sub-panel (switches / kneeboard area).
-	_box(Vector3(1.5, 0.22, 0.06), Vector3(0.15, -0.66, -0.55), panel_mat)
+	# Lower sub-panel (switches / kneeboard area) — kept in the panel plane so
+	# it doesn't poke forward and occlude the bottom of the G1000 screens.
+	_box(Vector3(1.5, 0.22, 0.06), Vector3(0.15, -0.66, -0.64), panel_mat)
 	# Glareshield (padded coaming) overhanging the top of the panel.
 	_box(Vector3(1.55, 0.08, 0.44), Vector3(0.15, -0.09, -0.62), coam, Vector3(-0.05, 0.0, 0.0))
 	# Glareshield front lip.
@@ -136,12 +137,14 @@ func _build_panel() -> void:
 #  G1000 screens via SubViewports
 # --------------------------------------------------------------------------
 func _build_screens() -> void:
-	var tilt := Vector3(-0.18, 0.0, 0.0)
+	# Gentle tilt; screens sit proud of the panel so their (tilted) bottom edge
+	# stays in front of the slab and the HSI isn't clipped.
+	var tilt := Vector3(-0.10, 0.0, 0.0)
 	# PFD in front of the pilot, MFD to its right (centre stack).
-	_make_screen(PFD_SCRIPT, Vector3(-0.07, -0.31, -0.625), 0.33, 0.25, tilt)
-	_make_screen(MFD_SCRIPT, Vector3(0.37, -0.31, -0.625), 0.33, 0.25, tilt)
+	_make_screen(PFD_SCRIPT, Vector3(-0.07, -0.30, -0.565), 0.34, 0.27, tilt)
+	_make_screen(MFD_SCRIPT, Vector3(0.37, -0.30, -0.565), 0.34, 0.27, tilt)
 	# Standby steam gauges (ASI/AI/ALT) to the left of the PFD.
-	_make_screen(STANDBY_SCRIPT, Vector3(-0.30, -0.31, -0.625), 0.10, 0.27, tilt, Vector2i(384, 1024))
+	_make_screen(STANDBY_SCRIPT, Vector3(-0.31, -0.30, -0.565), 0.10, 0.28, tilt, Vector2i(384, 1024))
 	# Wet magnetic compass on top of the glareshield.
 	_make_screen(COMPASS_SCRIPT, Vector3(0.15, -0.02, -0.60), 0.15, 0.07, Vector3(-0.4, 0, 0), Vector2i(512, 256))
 	# Avionics / radio stack between and below the screens.
@@ -168,8 +171,15 @@ func _make_screen(ui_script: Script, pos: Vector3, w: float, h: float, rot: Vect
 	add_child(sv)
 	var ui := Control.new()
 	ui.set_script(ui_script)
+	# Pin to the top-left and set the exact pixel size. (Do NOT use a full-rect
+	# anchor: with the project's canvas_items stretch it picks up a 2x content
+	# scale, making the Control 2048x1536 so the SubViewport clips it.)
+	ui.anchor_left = 0.0
+	ui.anchor_top = 0.0
+	ui.anchor_right = 0.0
+	ui.anchor_bottom = 0.0
+	ui.position = Vector2.ZERO
 	ui.size = Vector2(vp_size)
-	ui.set_anchors_preset(Control.PRESET_FULL_RECT)
 	sv.add_child(ui)
 
 	# Quad textured by the viewport, self-lit like a real display.

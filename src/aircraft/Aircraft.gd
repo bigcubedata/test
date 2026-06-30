@@ -120,7 +120,8 @@ func _process(_delta: float) -> void:
 
 func _read_input() -> void:
 	# Axis inputs (-1..1). Keyboard is digital; analog sticks map naturally.
-	input_pitch = Input.get_axis("pitch_down", "pitch_up")
+	# Yoke convention: Up arrow pushes the nose DOWN, Down arrow pulls it UP.
+	input_pitch = Input.get_axis("pitch_up", "pitch_down")
 	input_roll = Input.get_axis("roll_left", "roll_right")
 	input_yaw = Input.get_axis("yaw_left", "yaw_right")
 
