@@ -12,16 +12,17 @@ extends Camera3D
 
 @export var target_path: NodePath
 var target: Node3D
+var _airframe: Node3D
 
 enum View { COCKPIT, CHASE, WING, TOWER }
 var view: int = View.COCKPIT
 
 const CHASE_OFFSET := Vector3(0.0, 3.5, 13.0)
-const COCKPIT_OFFSET := Vector3(-0.22, 0.48, -1.05) # pilot eye point
+const COCKPIT_OFFSET := Vector3(-0.22, 0.57, -1.05) # pilot eye point (raised to see over the nose)
 const WING_OFFSET := Vector3(-8.0, 1.5, 0.0)
-const COCKPIT_FOV := 72.0
+const COCKPIT_FOV := 74.0
 const EXTERNAL_FOV := 65.0
-const BASE_PITCH := -15.0    # default downward look so panel + horizon both show
+const BASE_PITCH := -10.0    # default look favours outside; free-look down for panel
 const LOOK_SENS := 0.18
 
 var _tower_pos := Vector3(40.0, 12.0, 60.0)
@@ -36,6 +37,7 @@ func _ready() -> void:
 	current = true
 	if target:
 		_chase_pos = target.global_position + target.global_transform.basis * CHASE_OFFSET
+		_airframe = target.get_node_or_null("Airframe")
 
 
 func _process(_delta: float) -> void:
@@ -59,6 +61,11 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if not target:
 		return
+	# Hide the exterior fuselage from the cockpit (you're inside it); the
+	# cockpit interior + propeller provide the in-cabin visuals, and the
+	# windshield view stays clear for visual approaches.
+	if _airframe:
+		_airframe.visible = view != View.COCKPIT
 	var tx := target.global_transform
 	match view:
 		View.COCKPIT:

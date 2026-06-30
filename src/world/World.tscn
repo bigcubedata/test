@@ -2,10 +2,11 @@
 
 [sub_resource type="ProceduralSkyMaterial" id="sky_mat"]
 sky_top_color = Color(0.18, 0.42, 0.78, 1)
-sky_horizon_color = Color(0.7, 0.8, 0.92, 1)
-ground_bottom_color = Color(0.32, 0.4, 0.32, 1)
-ground_horizon_color = Color(0.7, 0.78, 0.85, 1)
-sun_angle_max = 30.0
+sky_horizon_color = Color(0.6, 0.74, 0.88, 1)
+ground_bottom_color = Color(0.28, 0.36, 0.26, 1)
+ground_horizon_color = Color(0.5, 0.62, 0.55, 1)
+sun_angle_max = 6.0
+sun_curve = 0.1
 
 [sub_resource type="Sky" id="sky"]
 sky_material = SubResource("sky_mat")
@@ -16,17 +17,18 @@ sky = SubResource("sky")
 ambient_light_source = 3
 ambient_light_color = Color(0.7, 0.78, 0.88, 1)
 ambient_light_energy = 0.4
-tonemap_mode = 2
+tonemap_mode = 3
+tonemap_white = 6.0
 fog_enabled = true
-fog_light_color = Color(0.75, 0.82, 0.9, 1)
-fog_density = 0.0006
-fog_aerial_perspective = 0.5
+fog_light_color = Color(0.7, 0.78, 0.88, 1)
+fog_density = 0.00008
+fog_aerial_perspective = 0.0
 
 [sub_resource type="PlaneMesh" id="mesh_ground"]
 size = Vector2(40000, 40000)
 
 [sub_resource type="StandardMaterial3D" id="mat_grass"]
-albedo_color = Color(0.28, 0.42, 0.24, 1)
+albedo_color = Color(0.24, 0.40, 0.19, 1)
 roughness = 0.95
 
 [sub_resource type="BoxMesh" id="mesh_runway"]
@@ -47,8 +49,10 @@ roughness = 0.7
 size = Vector3(2000, 600, 2000)
 
 [sub_resource type="StandardMaterial3D" id="mat_hill"]
-albedo_color = Color(0.34, 0.4, 0.3, 1)
+albedo_color = Color(0.20, 0.27, 0.32, 1)
 roughness = 1.0
+specular_mode = 1
+shading_mode = 1
 
 [sub_resource type="BoxMesh" id="mesh_marker"]
 size = Vector3(45, 0.34, 3)
@@ -61,7 +65,7 @@ environment = SubResource("env")
 [node name="Sun" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.86, -0.35, 0.37, 0, 0.73, 0.68, -0.5, -0.59, 0.63, 0, 0, 0)
 shadow_enabled = true
-light_energy = 1.1
+light_energy = 0.9
 
 [node name="Ground" type="MeshInstance3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
@@ -89,16 +93,11 @@ mesh = SubResource("mesh_marker")
 surface_material_override/0 = SubResource("mat_paint")
 
 [node name="Hill1" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6000, 280, -3500)
+transform = Transform3D(1.6, 0, 0, 0, 0.7, 0, 0, 0, 1.6, 5200, 90, -7000)
 mesh = SubResource("mesh_hill")
 surface_material_override/0 = SubResource("mat_hill")
 
 [node name="Hill2" type="MeshInstance3D" parent="."]
-transform = Transform3D(1.4, 0, 0, 0, 1.2, 0, 0, 0, 1.4, -5500, 350, -6000)
-mesh = SubResource("mesh_hill")
-surface_material_override/0 = SubResource("mat_hill")
-
-[node name="Hill3" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.8, 0, 0, 0, 1, 3000, 180, -8000)
+transform = Transform3D(2.0, 0, 0, 0, 0.6, 0, 0, 0, 2.0, -6000, 70, -8000)
 mesh = SubResource("mesh_hill")
 surface_material_override/0 = SubResource("mat_hill")

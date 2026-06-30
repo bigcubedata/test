@@ -127,10 +127,11 @@ func _build_panel() -> void:
 	# Lower sub-panel (switches / kneeboard area) — kept in the panel plane so
 	# it doesn't poke forward and occlude the bottom of the G1000 screens.
 	_box(Vector3(1.5, 0.22, 0.06), Vector3(0.15, -0.66, -0.64), panel_mat)
-	# Glareshield (padded coaming) overhanging the top of the panel.
-	_box(Vector3(1.55, 0.08, 0.44), Vector3(0.15, -0.09, -0.62), coam, Vector3(-0.05, 0.0, 0.0))
+	# Glareshield (padded coaming) overhanging the top of the panel. Kept low
+	# so the pilot can see the horizon and runway over the nose.
+	_box(Vector3(1.55, 0.07, 0.40), Vector3(0.15, -0.18, -0.62), coam, Vector3(-0.05, 0.0, 0.0))
 	# Glareshield front lip.
-	_box(Vector3(1.55, 0.05, 0.05), Vector3(0.15, -0.12, -0.84), coam)
+	_box(Vector3(1.55, 0.04, 0.05), Vector3(0.15, -0.21, -0.82), coam)
 
 
 # --------------------------------------------------------------------------

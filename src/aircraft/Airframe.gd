@@ -19,9 +19,11 @@ var _tire: StandardMaterial3D
 
 
 func _ready() -> void:
-	_white = _mat(Color(0.90, 0.90, 0.92), 0.45, 0.05)
+	_white = _mat(Color(0.80, 0.81, 0.84), 0.55, 0.0)
 	_blue = _mat(Color(0.12, 0.34, 0.62), 0.4, 0.1)
-	_glass = _mat(Color(0.25, 0.4, 0.55, 0.55), 0.05, 0.5)
+	# Windshield: nearly clear and non-metallic so you can see the runway
+	# through it from the cockpit (a shiny windshield mirrors the sky white).
+	_glass = _mat(Color(0.6, 0.7, 0.82, 0.13), 0.35, 0.0)
 	_glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_glass.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_metal = _mat(Color(0.32, 0.33, 0.36), 0.4, 0.6)
@@ -58,7 +60,7 @@ func _build_fuselage() -> void:
 		rings.append(_ring(s[0], s[1], s[2], s[3]))
 	# The fuselage is a closed tube, so cull back faces (avoids the near/far
 	# wall z-fighting moire you get with double-sided rendering).
-	var fuse_mat := _mat(Color(0.90, 0.90, 0.92), 0.45, 0.05)
+	var fuse_mat := _mat(Color(0.80, 0.81, 0.84), 0.55, 0.0)
 	fuse_mat.cull_mode = BaseMaterial3D.CULL_BACK
 	_add_mesh(_loft_mesh(rings, true, true), fuse_mat)
 

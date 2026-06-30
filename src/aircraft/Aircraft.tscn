@@ -67,5 +67,5 @@ shape = SubResource("shape_body")
 [node name="CameraRig" type="Node3D" parent="."]
 
 [node name="Cockpit" type="Node3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.22, 0.45, -1.0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.22, 0.28, -1.0)
 script = ExtResource("2_cockpit")
