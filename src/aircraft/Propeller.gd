@@ -68,7 +68,7 @@ func _process(delta: float) -> void:
 		_blades.rotation.z += rps * TAU * delta
 	if _arc_mat:
 		# Blades visible at low rpm; arc disc takes over as it spools up.
-		var a := clampf((rpm - 500.0) / 1100.0, 0.0, 1.0) * 0.28
+		var a := clampf((rpm - 500.0) / 1100.0, 0.0, 1.0) * 0.34
 		_arc_mat.albedo_color.a = a
 
 

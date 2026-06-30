@@ -13,7 +13,8 @@ extends Node3D
 const PFD_SCRIPT := preload("res://src/ui/PFD.gd")
 const MFD_SCRIPT := preload("res://src/ui/MFD.gd")
 const STANDBY_SCRIPT := preload("res://src/ui/StandbyGauges.gd")
-const COMPASS_SCRIPT := preload("res://src/ui/Compass.gd")
+
+const NOSE_SEG := 16  # cowl cross-section resolution
 
 var _aircraft: Node
 var _yoke: Node3D
@@ -22,13 +23,14 @@ var _panel_normal: Texture2D
 var _leather_normal: Texture2D
 var _screens: Array = []
 var _rebind_frames := 8
+var _camera: Node
 
 
 func _ready() -> void:
 	_aircraft = get_parent()
 	_panel_normal = _noise_normal(0.08, 5.0)    # fine moulded-plastic grain
 	_leather_normal = _noise_normal(0.025, 11.0) # coarse padded-leather grain
-	_build_structure()
+	_build_nose()
 	_build_panel()
 	_build_screens()
 	_build_yokes()
@@ -91,30 +93,65 @@ func _cyl(radius: float, height: float, pos: Vector3, mat: StandardMaterial3D, r
 
 
 # --------------------------------------------------------------------------
-#  Cabin shell: posts, window frames, side walls
+#  Nose / engine cowl seen over the glareshield
 # --------------------------------------------------------------------------
-func _build_structure() -> void:
-	# Warm "Royalite" cabin plastic instead of stark white, with a soft headliner
-	# and slightly darker side trim — closer to a real C172 interior.
-	var frame := _mat(Color(0.63, 0.61, 0.57), 0.85, 0.0, _panel_normal, 0.25)
-	var head := _mat(Color(0.79, 0.78, 0.74), 0.9, 0.0, _leather_normal, 0.3)
-	var trim := _mat(Color(0.44, 0.43, 0.41), 0.85, 0.0, _leather_normal, 0.45)
+## A lofted cream cowl in front of the windshield that meets the spinner, so
+## from the pilot's eye you see part of the nose with the top half of the prop
+## arc above it — as in a real C172 (the cowl hides the lower half of the prop).
+func _build_nose() -> void:
+	# Cream painted cowl, fairly matte so the sun doesn't blow it out white.
+	var cowl := _mat(Color(0.74, 0.74, 0.75), 0.65, 0.0, _panel_normal, 0.15)
+	cowl.cull_mode = BaseMaterial3D.CULL_DISABLED  # solid from the inside eye point
+	var cx := 0.22  # aircraft centreline in cockpit-local X
 
-	# Slim A-pillars (windshield posts), leaning forward and outboard.
-	_box(Vector3(0.034, 0.84, 0.045), Vector3(-0.6, 0.22, -0.74), frame, Vector3(-0.45, 0.0, 0.18))
-	_box(Vector3(0.034, 0.84, 0.045), Vector3(0.9, 0.22, -0.74), frame, Vector3(-0.45, 0.0, -0.18))
-	# Thin windshield header.
-	_box(Vector3(1.62, 0.045, 0.055), Vector3(0.15, 0.55, -0.92), frame, Vector3(-0.35, 0.0, 0.0))
-	# Slim centre divider between the windshield halves.
-	_box(Vector3(0.022, 0.72, 0.03), Vector3(0.15, 0.26, -0.86), frame, Vector3(-0.4, 0.0, 0.0))
-	# Side cabin walls / door frames (lower, slimmer).
-	_box(Vector3(0.05, 0.6, 1.5), Vector3(-0.64, -0.2, -0.1), trim)
-	_box(Vector3(0.05, 0.6, 1.5), Vector3(0.94, -0.2, -0.1), trim)
-	# Window sills.
-	_box(Vector3(0.05, 0.05, 1.3), Vector3(-0.62, -0.02, -0.15), frame)
-	_box(Vector3(0.05, 0.05, 1.3), Vector3(0.92, -0.02, -0.15), frame)
-	# Headliner / cabin roof, gently sloped forward.
-	_box(Vector3(1.64, 0.045, 0.82), Vector3(0.15, 0.6, -0.18), head, Vector3(0.05, 0.0, 0.0))
+	# stations: z (fwd -Z), half-width, half-height, centre-y. The top deck
+	# (cy + h) descends smoothly toward the spinner so it reads as one surface.
+	var st := [
+		[-1.00, 0.52, 0.30, -0.50],
+		[-1.80, 0.50, 0.30, -0.52],
+		[-2.60, 0.44, 0.28, -0.55],
+		[-3.20, 0.34, 0.24, -0.52],
+		[-3.60, 0.20, 0.16, -0.44],
+		[-3.85, 0.09, 0.09, -0.33],  # meets the spinner
+	]
+	var rings: Array = []
+	for s in st:
+		rings.append(_nose_ring(cx, s[0], s[1], s[2], s[3]))
+	var mi := MeshInstance3D.new()
+	mi.mesh = _nose_loft(rings)
+	mi.material_override = cowl
+	add_child(mi)
+
+
+func _nose_ring(cx: float, z: float, w: float, h: float, cy: float) -> PackedVector3Array:
+	var r := PackedVector3Array()
+	for i in range(NOSE_SEG):
+		var a := TAU * float(i) / float(NOSE_SEG)
+		r.append(Vector3(cx + w * cos(a), cy + h * sin(a), z))
+	return r
+
+
+func _nose_loft(rings: Array) -> ArrayMesh:
+	var stt := SurfaceTool.new()
+	stt.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for r in range(rings.size() - 1):
+		var ra: PackedVector3Array = rings[r]
+		var rb: PackedVector3Array = rings[r + 1]
+		for i in range(NOSE_SEG):
+			var j := (i + 1) % NOSE_SEG
+			stt.add_vertex(ra[i]); stt.add_vertex(ra[j]); stt.add_vertex(rb[j])
+			stt.add_vertex(ra[i]); stt.add_vertex(rb[j]); stt.add_vertex(rb[i])
+	# Front cap (spinner end) to its centre.
+	var last: PackedVector3Array = rings[rings.size() - 1]
+	var ctr := Vector3.ZERO
+	for p in last:
+		ctr += p
+	ctr /= last.size()
+	for i in range(NOSE_SEG):
+		var j := (i + 1) % NOSE_SEG
+		stt.add_vertex(last[i]); stt.add_vertex(ctr); stt.add_vertex(last[j])
+	stt.generate_normals()
+	return stt.commit()
 
 
 # --------------------------------------------------------------------------
@@ -149,9 +186,6 @@ func _build_screens() -> void:
 	_make_screen(MFD_SCRIPT, Vector3(0.37, -0.30, -0.565), 0.34, 0.27, tilt)
 	# Standby steam gauges (ASI/AI/ALT) to the left of the PFD.
 	_make_screen(STANDBY_SCRIPT, Vector3(-0.31, -0.30, -0.565), 0.10, 0.28, tilt, Vector2i(384, 1024))
-	# Wet magnetic compass hung from the top of the windshield, centred so it
-	# stays clear of the glareshield and panel instead of being occluded.
-	_make_screen(COMPASS_SCRIPT, Vector3(0.15, 0.40, -0.80), 0.17, 0.085, Vector3(0.34, 0, 0), Vector2i(512, 256))
 	# Avionics / radio stack between and below the screens.
 	var stack := _mat(Color(0.07, 0.07, 0.08), 0.6)
 	_box(Vector3(0.10, 0.36, 0.03), Vector3(0.15, -0.32, -0.632), stack, tilt)
@@ -276,6 +310,14 @@ func _build_lighting() -> void:
 
 
 func _process(_delta: float) -> void:
+	# The cockpit interior (panel, screens, yokes and the cowl) is only seen from
+	# the cockpit eye-point; hide it in external/replay views, where the exterior
+	# airframe already provides the nose, to avoid a doubled/clashing fuselage.
+	if _camera == null:
+		_camera = get_tree().get_first_node_in_group("flight_camera")
+	if _camera:
+		visible = int(_camera.view) == 0 and not Replay.is_replaying()
+
 	# Re-bind the panel-screen viewport textures for the first few frames, in
 	# case the initial bind came back blank on this graphics backend.
 	if _rebind_frames > 0:
