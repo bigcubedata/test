@@ -4,6 +4,7 @@
 [ext_resource type="Script" path="res://src/aircraft/Cockpit.gd" id="2_cockpit"]
 [ext_resource type="Script" path="res://src/aircraft/Propeller.gd" id="3_prop"]
 [ext_resource type="Script" path="res://src/aircraft/Airframe.gd" id="4_airframe"]
+[ext_resource type="Script" path="res://src/aircraft/ReplayAnnotation.gd" id="5_tag"]
 
 [sub_resource type="StandardMaterial3D" id="mat_white"]
 albedo_color = Color(0.92, 0.92, 0.94, 1)
@@ -69,3 +70,6 @@ shape = SubResource("shape_body")
 [node name="Cockpit" type="Node3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.22, 0.28, -1.0)
 script = ExtResource("2_cockpit")
+
+[node name="ReplayTag" type="Label3D" parent="."]
+script = ExtResource("5_tag")

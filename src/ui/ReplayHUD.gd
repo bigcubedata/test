@@ -48,7 +48,7 @@ func _draw_replay_bar() -> void:
 	draw_circle(Vector2(x + 6, y + 10), 6, C_REC)
 	draw_string(_font_b, Vector2(x + 18, y + 15), "REPLAY", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, C_TEXT)
 
-	var spd := "%.2gx" % Replay.playback_speed()
+	var spd := str(Replay.playback_speed()) + "x"
 	draw_string(_font, Vector2(x + 96, y + 15), spd, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, C_AMBER)
 	if Replay.paused:
 		draw_string(_font_b, Vector2(x + 150, y + 15), "PAUSED", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, C_AMBER)
