@@ -11,7 +11,7 @@ const C_RED := Color(0.95, 0.15, 0.15)
 
 
 func _ready() -> void:
-	_font = ThemeDB.fallback_font
+	_font = UiFont.regular()
 
 
 func _process(_delta: float) -> void:
