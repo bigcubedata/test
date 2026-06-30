@@ -41,7 +41,6 @@ var _head: int = 0       # next write slot
 var _count: int = 0      # number of valid samples
 
 var aircraft: RigidBody3D
-var _camera: Node
 
 var _play_pos: float = 0.0     # fractional sample index [0, _count-1]
 var paused: bool = false
@@ -145,10 +144,7 @@ func _enter_replay() -> void:
 	_resume_angvel = aircraft.angular_velocity
 	aircraft.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
 	aircraft.freeze = true
-	# A good tracking shot: snap the chase camera onto the played-back aircraft.
-	_camera = get_tree().get_first_node_in_group("flight_camera")
-	if _camera and int(_camera.view) == 0:   # leave the cockpit for replays
-		_camera.view = 1
+	# The camera switches itself to an orbit while is_replaying() is true.
 
 
 func _exit_replay() -> void:
