@@ -17,8 +17,18 @@ var _glass: StandardMaterial3D
 var _metal: StandardMaterial3D
 var _tire: StandardMaterial3D
 
+# Animated control-surface pivots (flaps follow FlightData; the rest follow
+# the parent Aircraft's live surface deflections).
+var _aircraft: Node
+var _flaps: Array = []
+var _ail_r: Node3D
+var _ail_l: Node3D
+var _elev: Node3D
+var _rud: Node3D
+
 
 func _ready() -> void:
+	_aircraft = get_parent()
 	_white = _mat(Color(0.80, 0.81, 0.84), 0.55, 0.0)
 	_blue = _mat(Color(0.12, 0.34, 0.62), 0.4, 0.1)
 	# Windshield: nearly clear and non-metallic so you can see the runway
@@ -35,6 +45,28 @@ func _ready() -> void:
 	_build_tail()
 	_build_gear()
 	_build_windows()
+	_build_stripe()
+	_build_cowl_details()
+	_build_registration()
+
+
+func _process(_delta: float) -> void:
+	# Animate control surfaces. Flaps track FlightData (so they replay too);
+	# ailerons/elevator/rudder track the live deflections on the Aircraft.
+	var fl := deg_to_rad(FlightData.flaps_deg)
+	for p in _flaps:
+		p.rotation.x = fl
+	if _aircraft == null:
+		return
+	var ail: float = _aircraft.aileron
+	if _ail_r:
+		_ail_r.rotation.x = -ail          # right aileron up on right-roll input
+	if _ail_l:
+		_ail_l.rotation.x = ail
+	if _elev:
+		_elev.rotation.x = -_aircraft.elevator * 1.2
+	if _rud:
+		_rud.rotation.y = _aircraft.rudder * 1.3
 
 
 # --------------------------------------------------------------------------
@@ -79,11 +111,13 @@ func _ring(z: float, w: float, h: float, cy: float) -> PackedVector3Array:
 #  Wings (tapered, rounded tip, dihedral) + struts
 # --------------------------------------------------------------------------
 func _build_wings() -> void:
-	# Planform in (span = u/X, chord = v/Z); thickness along Y.
+	# Planform in (span = u/X, chord = v/Z); thickness along Y. The trailing
+	# edge stops at v=0.70 — the last ~22% of chord is the separate flap and
+	# aileron surfaces built below, which animate.
 	var prof := PackedVector2Array([
 		Vector2(0.45, -0.55), Vector2(3.9, -0.55), Vector2(5.05, -0.40),
-		Vector2(5.30, 0.05), Vector2(5.05, 0.78), Vector2(3.9, 1.05),
-		Vector2(0.45, 1.05),
+		Vector2(5.30, 0.05), Vector2(5.05, 0.55), Vector2(3.9, 0.70),
+		Vector2(0.45, 0.70),
 	])
 	var dih := 0.05  # dihedral (rad)
 	for sign in [1.0, -1.0]:
@@ -94,11 +128,40 @@ func _build_wings() -> void:
 		# Blue tip cap.
 		var tip := PackedVector2Array([
 			Vector2(4.55, -0.42), Vector2(5.05, -0.40), Vector2(5.30, 0.05),
-			Vector2(5.05, 0.78), Vector2(4.55, 0.92)])
+			Vector2(5.05, 0.55), Vector2(4.55, 0.66)])
 		var tm := _extrude(tip, Vector3(sign, 0, 0), Vector3(0, 0, 1), 0.21,
 			Vector3(0, 0, -1.55), _blue)
 		tm.rotation = Vector3(0, 0, dih * sign)
 		tm.position.y = 0.84
+
+		# Hinged trailing-edge surfaces (hinge line at z = -0.85).
+		var surf := _mat(Color(0.72, 0.73, 0.76), 0.5, 0.0)
+		var flap := _hinged_surface(Vector3(sign * 1.5, 0.84 + 0.05 * 1.5, -0.85),
+			Vector3(1.9, 0.05, 0.36), dih * sign, surf)
+		_flaps.append(flap)
+		var ail := _hinged_surface(Vector3(sign * 3.7, 0.84 + 0.05 * 3.7, -0.85),
+			Vector3(2.1, 0.045, 0.32), dih * sign, surf)
+		if sign > 0.0:
+			_ail_r = ail
+		else:
+			_ail_l = ail
+
+
+## A control surface hanging aft (+Z) of its hinge-line pivot.
+func _hinged_surface(pivot_pos: Vector3, sz: Vector3, roll: float,
+		mat: StandardMaterial3D) -> Node3D:
+	var pivot := Node3D.new()
+	pivot.position = pivot_pos
+	pivot.rotation.z = roll
+	add_child(pivot)
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = sz
+	mi.mesh = bm
+	mi.material_override = mat
+	mi.position = Vector3(0, 0, sz.z * 0.5 - 0.02)
+	pivot.add_child(mi)
+	return pivot
 
 
 func _build_struts() -> void:
@@ -135,18 +198,41 @@ func _strut(a: Vector3, b: Vector3, thick: float) -> void:
 # --------------------------------------------------------------------------
 func _build_tail() -> void:
 	# Vertical fin (planform in chord=Z, height=Y; thin in X) with dorsal fin.
+	# The trailing part is a separate rudder hinged at z = 3.30.
 	var fin := PackedVector2Array([
-		Vector2(1.9, 0.30), Vector2(3.05, 1.45), Vector2(3.5, 1.45),
-		Vector2(3.72, 0.34),
+		Vector2(1.9, 0.30), Vector2(3.05, 1.45), Vector2(3.28, 1.45),
+		Vector2(3.30, 0.32),
 	])
 	_add_mesh(_extrude_mesh(fin, Vector3(0, 0, 1), Vector3(0, 1, 0), 0.08), _blue)
 
-	# Horizontal stabiliser (span=X, chord=Z; thin in Y), tapered with elevator.
+	_rud = Node3D.new()
+	_rud.position = Vector3(0, 0, 3.30)
+	add_child(_rud)
+	var rud_prof := PackedVector2Array([
+		Vector2(0.0, 0.30), Vector2(0.42, 0.36), Vector2(0.26, 1.44), Vector2(0.0, 1.45),
+	])
+	var rud_mi := MeshInstance3D.new()
+	rud_mi.mesh = _extrude_mesh(rud_prof, Vector3(0, 0, 1), Vector3(0, 1, 0), 0.07)
+	rud_mi.material_override = _blue
+	_rud.add_child(rud_mi)
+
+	# Horizontal stabiliser (span=X, chord=Z; thin in Y); the elevator hangs
+	# from a hinge at z = 3.40.
 	var stab := PackedVector2Array([
-		Vector2(-1.75, 3.08), Vector2(1.75, 3.08), Vector2(1.45, 3.42),
-		Vector2(1.45, 3.66), Vector2(-1.45, 3.66), Vector2(-1.45, 3.42),
+		Vector2(-1.75, 3.08), Vector2(1.75, 3.08), Vector2(1.5, 3.40), Vector2(-1.5, 3.40),
 	])
 	_extrude(stab, Vector3(1, 0, 0), Vector3(0, 0, 1), 0.10, Vector3(0, 0.32, 0), _white)
+
+	_elev = Node3D.new()
+	_elev.position = Vector3(0, 0.32, 3.40)
+	add_child(_elev)
+	var ele_mi := MeshInstance3D.new()
+	var ele_bm := BoxMesh.new()
+	ele_bm.size = Vector3(3.05, 0.07, 0.30)
+	ele_mi.mesh = ele_bm
+	ele_mi.material_override = _white
+	ele_mi.position = Vector3(0, 0, 0.14)
+	_elev.add_child(ele_mi)
 
 
 # --------------------------------------------------------------------------
@@ -190,27 +276,89 @@ func _wheel(pos: Vector3) -> void:
 #  Glass: windshield + side windows
 # --------------------------------------------------------------------------
 func _build_windows() -> void:
-	# Windshield (two angled panes meeting at the centre post).
+	# Big Cessna glazing: a wide windshield raked AFT (base at the cowl, top at
+	# the wing leading edge), tall door windows, rear windows and small
+	# rear-quarter lights — the 172's greenhouse look.
 	var wprof := PackedVector2Array([
-		Vector2(-0.5, 0.0), Vector2(0.5, 0.0), Vector2(0.42, 0.62), Vector2(-0.42, 0.62)])
-	var ws := _extrude(wprof, Vector3(1, 0, 0), Vector3(0, 0.7, -0.72).normalized(), 0.02,
-		Vector3(0, 0.32, -2.15), _glass)
-	# Side windows (cabin), left and right, sitting just proud of the skin.
+		Vector2(-0.56, 0.0), Vector2(0.56, 0.0), Vector2(0.46, 0.68), Vector2(-0.46, 0.68)])
+	_extrude(wprof, Vector3(1, 0, 0), Vector3(0, 0.75, 0.55).normalized(), 0.02,
+		Vector3(0, 0.24, -2.42), _glass)
 	for sign in [1.0, -1.0]:
-		var swin := PackedVector2Array([
-			Vector2(-0.5, -0.16), Vector2(0.5, -0.16), Vector2(0.42, 0.18), Vector2(-0.42, 0.18)])
-		var m := _extrude(swin, Vector3(0, 0, 1), Vector3(0, 1, 0), 0.02,
-			Vector3(sign * 0.63, 0.30, -1.35), _glass)
-		m.rotation = Vector3(0, sign * -0.05, 0)  # toe in to follow the body
+		# Door window.
+		var door := PackedVector2Array([
+			Vector2(-0.52, -0.20), Vector2(0.52, -0.20), Vector2(0.44, 0.24), Vector2(-0.44, 0.24)])
+		var m := _extrude(door, Vector3(0, 0, 1), Vector3(0, 1, 0), 0.02,
+			Vector3(sign * 0.615, 0.30, -1.42), _glass)
+		m.rotation = Vector3(0, sign * -0.04, 0)  # toe in to follow the body
+		# Rear cabin window.
+		var rear := PackedVector2Array([
+			Vector2(-0.46, -0.16), Vector2(0.46, -0.16), Vector2(0.38, 0.22), Vector2(-0.38, 0.22)])
+		var r := _extrude(rear, Vector3(0, 0, 1), Vector3(0, 1, 0), 0.02,
+			Vector3(sign * 0.575, 0.30, -0.40), _glass)
+		r.rotation = Vector3(0, sign * -0.09, 0)
+		# Rear-quarter light on the tapering aft cabin.
+		var qtr := PackedVector2Array([
+			Vector2(-0.30, -0.10), Vector2(0.30, -0.10), Vector2(0.22, 0.16), Vector2(-0.22, 0.16)])
+		var q := _extrude(qtr, Vector3(0, 0, 1), Vector3(0, 1, 0), 0.02,
+			Vector3(sign * 0.50, 0.30, 0.42), _glass)
+		q.rotation = Vector3(0, sign * -0.14, 0)
 
 
 func _build_stripe() -> void:
-	# Cheatline along the fuselage sides.
-	for sign in [1.0, -1.0]:
-		var st := PackedVector2Array([
-			Vector2(-3.4, 0.0), Vector2(2.6, 0.0), Vector2(2.6, 0.10), Vector2(-3.4, 0.10)])
-		_extrude(st, Vector3(0, 0, 1), Vector3(0, 1, 0), 0.01,
-			Vector3(sign * 0.585, -0.05, 0.0), _blue)
+	# Blue cheatline along the fuselage sides, segmented so it follows the
+	# hull's taper (a single flat plane would bury itself or float).
+	var pts := [
+		[-2.90, 0.46], [-2.40, 0.555], [-1.60, 0.585], [-0.60, 0.575],
+		[0.40, 0.51], [1.30, 0.38], [2.20, 0.24], [2.90, 0.15],
+	]
+	for side in [1.0, -1.0]:
+		for i in range(pts.size() - 1):
+			var z0: float = pts[i][0]
+			var w0: float = pts[i][1]
+			var z1: float = pts[i + 1][0]
+			var w1: float = pts[i + 1][1]
+			var length := z1 - z0
+			var seg := _box(Vector3(0.02, 0.15, length + 0.06),
+				Vector3(side * ((w0 + w1) * 0.5 + 0.012), -0.10, (z0 + z1) * 0.5), _blue)
+			seg.rotation.y = side * atan2(w0 - w1, length)
+
+
+func _build_cowl_details() -> void:
+	# Air-intake scoops each side of the spinner, a landing light between them
+	# and an exhaust stub under the right cowl cheek.
+	var dark := _mat(Color(0.05, 0.05, 0.06), 0.7, 0.0)
+	for s in [1.0, -1.0]:
+		_box(Vector3(0.16, 0.11, 0.10), Vector3(s * 0.15, -0.14, -3.40), dark)
+	_box(Vector3(0.12, 0.07, 0.06), Vector3(0.0, -0.24, -3.44),
+		_mat(Color(0.9, 0.92, 0.82), 0.2, 0.4))
+	var pipe := _box(Vector3(0.07, 0.07, 0.30), Vector3(0.16, -0.47, -2.95),
+		_mat(Color(0.25, 0.25, 0.27), 0.5, 0.6))
+	pipe.rotation.x = 0.25
+
+
+func _build_registration() -> void:
+	# N-number on both sides of the aft fuselage, rotated to follow the taper.
+	for s in [1.0, -1.0]:
+		var l := Label3D.new()
+		l.text = "N172SG"
+		l.font = UiFont.bold()
+		l.font_size = 120
+		l.pixel_size = 0.0032
+		l.modulate = Color(0.10, 0.22, 0.45)
+		l.position = Vector3(s * 0.40, 0.16, 1.15)
+		l.rotation.y = s * (PI * 0.5 - 0.14)
+		add_child(l)
+
+
+func _box(sz: Vector3, pos: Vector3, mat: StandardMaterial3D) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = sz
+	mi.mesh = bm
+	mi.material_override = mat
+	mi.position = pos
+	add_child(mi)
+	return mi
 
 
 # --------------------------------------------------------------------------
