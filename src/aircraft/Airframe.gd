@@ -41,19 +41,21 @@ func _ready() -> void:
 #  Fuselage (lofted elliptical sections)
 # --------------------------------------------------------------------------
 func _build_fuselage() -> void:
-	# stations: z (fwd -Z), half-width x, half-height y, vertical centre
+	# stations: z (fwd -Z), half-width x, half-height y, vertical centre.
+	# Nose shortened to a true C172 cowl length (spinner ~-3.8); the long tail
+	# boom and tall cabin are kept for the right proportions.
 	var st := [
-		[-4.55, 0.06, 0.06, -0.02],
-		[-4.30, 0.34, 0.33, -0.03],
-		[-3.70, 0.50, 0.50, -0.02],
-		[-3.00, 0.55, 0.60, 0.03],
-		[-2.20, 0.57, 0.66, 0.07],
-		[-1.40, 0.58, 0.70, 0.09],
+		[-3.62, 0.07, 0.09, -0.06],   # cowl front (spinner backplate)
+		[-3.35, 0.30, 0.28, -0.05],
+		[-2.95, 0.48, 0.44, -0.01],
+		[-2.55, 0.55, 0.58, 0.04],
+		[-2.20, 0.57, 0.66, 0.07],    # windshield base
+		[-1.40, 0.58, 0.70, 0.09],    # cabin (tallest)
 		[-0.40, 0.56, 0.70, 0.09],
-		[0.60, 0.48, 0.60, 0.07],
-		[1.50, 0.34, 0.42, 0.10],
-		[2.50, 0.20, 0.27, 0.14],
-		[3.45, 0.10, 0.17, 0.20],
+		[0.60, 0.48, 0.59, 0.08],
+		[1.55, 0.33, 0.42, 0.11],
+		[2.55, 0.19, 0.27, 0.16],
+		[3.55, 0.09, 0.16, 0.22],     # tailcone
 	]
 	var rings: Array = []
 	for s in st:
@@ -88,7 +90,7 @@ func _build_wings() -> void:
 		var m := _extrude(prof, Vector3(sign, 0, 0), Vector3(0, 0, 1), 0.17,
 			Vector3(0, 0, -1.55), _white)
 		m.rotation = Vector3(0, 0, dih * sign)  # tips up (dihedral)
-		m.position.y = 0.66
+		m.position.y = 0.84                      # high wing, sitting on the cabin roof
 		# Blue tip cap.
 		var tip := PackedVector2Array([
 			Vector2(4.55, -0.42), Vector2(5.05, -0.40), Vector2(5.30, 0.05),
@@ -96,7 +98,7 @@ func _build_wings() -> void:
 		var tm := _extrude(tip, Vector3(sign, 0, 0), Vector3(0, 0, 1), 0.21,
 			Vector3(0, 0, -1.55), _blue)
 		tm.rotation = Vector3(0, 0, dih * sign)
-		tm.position.y = 0.66
+		tm.position.y = 0.84
 
 
 func _build_struts() -> void:
@@ -104,11 +106,11 @@ func _build_struts() -> void:
 	# wing sits at y=0.66 with dihedral, so its underside at span ~2.5 is near
 	# y=0.70 — the strut top must reach there or it visibly floats below the wing.
 	for sign in [1.0, -1.0]:
-		var top := Vector3(sign * 2.5, 0.70, -1.55)
-		var bot := Vector3(sign * 0.42, -0.38, -1.42)
+		var top := Vector3(sign * 2.5, 0.88, -1.55)
+		var bot := Vector3(sign * 0.42, -0.39, -1.42)
 		_strut(top, bot, 0.05)
 		# Small jury strut bracing the main strut to the wing near the attach.
-		_strut(Vector3(sign * 2.12, 0.44, -1.5), Vector3(sign * 2.45, 0.69, -1.62), 0.03)
+		_strut(Vector3(sign * 2.12, 0.55, -1.5), Vector3(sign * 2.45, 0.87, -1.62), 0.03)
 
 
 func _strut(a: Vector3, b: Vector3, thick: float) -> void:
@@ -155,9 +157,9 @@ func _build_gear() -> void:
 	for sign in [1.0, -1.0]:
 		_strut(Vector3(sign * 0.18, -0.30, -1.0), Vector3(sign * 1.05, -1.05, -1.0), 0.06)
 		_wheel(Vector3(sign * 1.05, -1.18, -1.0))
-	# Nose gear.
-	_strut(Vector3(0.0, -0.45, -3.35), Vector3(0.0, -1.05, -3.55), 0.07)
-	_wheel(Vector3(0.0, -1.18, -3.55))
+	# Nose gear (under the engine on the shorter cowl).
+	_strut(Vector3(0.0, -0.45, -2.75), Vector3(0.0, -1.05, -2.95), 0.07)
+	_wheel(Vector3(0.0, -1.18, -2.95))
 
 
 func _wheel(pos: Vector3) -> void:

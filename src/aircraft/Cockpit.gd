@@ -104,16 +104,15 @@ func _build_nose() -> void:
 	cowl.cull_mode = BaseMaterial3D.CULL_DISABLED  # solid from the inside eye point
 	var cx := 0.22  # aircraft centreline in cockpit-local X
 
-	# stations: z (fwd -Z), half-width, half-height, centre-y. Kept full toward
-	# the front so the nose is blunt (not a sharp cone); the spinner provides the
-	# actual point. The top deck (cy + h) descends smoothly toward the spinner.
+	# stations: z (fwd -Z), half-width, half-height, centre-y. Short cowl that
+	# meets the spinner (aircraft z=-3.8 -> local -2.8); blunt at the front so
+	# the nose isn't a sharp cone (the spinner is the only point).
 	var st := [
 		[-1.00, 0.52, 0.31, -0.50],
-		[-1.85, 0.52, 0.31, -0.52],
-		[-2.60, 0.49, 0.29, -0.53],
-		[-3.20, 0.44, 0.27, -0.52],
-		[-3.65, 0.36, 0.24, -0.46],
-		[-3.95, 0.22, 0.19, -0.36],  # blunt cowl face; spinner sits in front
+		[-1.55, 0.52, 0.31, -0.52],
+		[-2.05, 0.48, 0.28, -0.53],
+		[-2.45, 0.40, 0.25, -0.48],
+		[-2.80, 0.24, 0.20, -0.36],  # blunt cowl face; spinner sits in front
 	]
 	var rings: Array = []
 	for s in st:
