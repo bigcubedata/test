@@ -43,7 +43,7 @@ func _draw() -> void:
 	var y := 56
 	_row("MAP", "%.1f inHg" % FlightData.manifold_pressure_inhg, y); y += 20
 	_row("FFLOW", "%.1f gph" % FlightData.fuel_flow_gph, y); y += 20
-	_row("OIL T", "%d C" % roundi(FlightData.oil_temp_c), y); y += 20
+	_row("OIL T", "%d F" % roundi(FlightData.oil_temp_c * 1.8 + 32.0), y); y += 20
 	_row("THR", "%d %%" % roundi(FlightData.throttle_pct), y); y += 20
 
 

@@ -58,12 +58,12 @@ func _draw_engine(r: Rect2) -> void:
 	y = _bar(x0, y, w, "RPM", FlightData.engine_rpm, 0, 2700, 2700, "%d")
 	y = _bar(x0, y, w, "MAP \"", FlightData.manifold_pressure_inhg, 10, 30, 99, "%.1f")
 	y = _bar(x0, y, w, "FFLOW", FlightData.fuel_flow_gph, 0, 20, 99, "%.1f")
-	y = _bar(x0, y, w, "OIL T", FlightData.oil_temp_c, 0, 120, 116, "%d")
+	y = _bar(x0, y, w, "OIL °F", FlightData.oil_temp_c * 1.8 + 32.0, 100, 250, 245, "%d")
 	y = _bar(x0, y, w, "OIL P", lerpf(25, 60, clampf(FlightData.engine_rpm / 2700.0, 0, 1)), 0, 100, 100, "%d")
 	y += 8
 
-	# Fuel + volts.
-	_t(Vector2(x0, y), "FUEL  %d%%" % roundi(FlightData.fuel_pct * 100.0), 14, C_GREEN)
+	# Fuel (US gallons; C172S holds 53 usable) + volts.
+	_t(Vector2(x0, y), "FUEL  %d GAL" % roundi(FlightData.fuel_pct * 53.0), 14, C_GREEN)
 	y += 20
 	_t(Vector2(x0, y), "VOLTS %.1f" % FlightData.volts, 14, C_GREEN)
 	y += 20

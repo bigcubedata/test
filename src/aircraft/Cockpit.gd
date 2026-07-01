@@ -104,15 +104,16 @@ func _build_nose() -> void:
 	cowl.cull_mode = BaseMaterial3D.CULL_DISABLED  # solid from the inside eye point
 	var cx := 0.22  # aircraft centreline in cockpit-local X
 
-	# stations: z (fwd -Z), half-width, half-height, centre-y. The top deck
-	# (cy + h) descends smoothly toward the spinner so it reads as one surface.
+	# stations: z (fwd -Z), half-width, half-height, centre-y. Kept full toward
+	# the front so the nose is blunt (not a sharp cone); the spinner provides the
+	# actual point. The top deck (cy + h) descends smoothly toward the spinner.
 	var st := [
-		[-1.00, 0.52, 0.30, -0.50],
-		[-1.80, 0.50, 0.30, -0.52],
-		[-2.60, 0.44, 0.28, -0.55],
-		[-3.20, 0.34, 0.24, -0.52],
-		[-3.60, 0.20, 0.16, -0.44],
-		[-3.85, 0.09, 0.09, -0.33],  # meets the spinner
+		[-1.00, 0.52, 0.31, -0.50],
+		[-1.85, 0.52, 0.31, -0.52],
+		[-2.60, 0.49, 0.29, -0.53],
+		[-3.20, 0.44, 0.27, -0.52],
+		[-3.65, 0.36, 0.24, -0.46],
+		[-3.95, 0.22, 0.19, -0.36],  # blunt cowl face; spinner sits in front
 	]
 	var rings: Array = []
 	for s in st:
@@ -141,12 +142,14 @@ func _nose_loft(rings: Array) -> ArrayMesh:
 			var j := (i + 1) % NOSE_SEG
 			stt.add_vertex(ra[i]); stt.add_vertex(ra[j]); stt.add_vertex(rb[j])
 			stt.add_vertex(ra[i]); stt.add_vertex(rb[j]); stt.add_vertex(rb[i])
-	# Front cap (spinner end) to its centre.
+	# Front cap (spinner end), bulged slightly forward so the face is rounded
+	# rather than a flat disc.
 	var last: PackedVector3Array = rings[rings.size() - 1]
 	var ctr := Vector3.ZERO
 	for p in last:
 		ctr += p
 	ctr /= last.size()
+	ctr.z -= 0.08
 	for i in range(NOSE_SEG):
 		var j := (i + 1) % NOSE_SEG
 		stt.add_vertex(last[i]); stt.add_vertex(ctr); stt.add_vertex(last[j])

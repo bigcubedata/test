@@ -100,13 +100,15 @@ func _build_wings() -> void:
 
 
 func _build_struts() -> void:
-	# Lift strut from lower fuselage to ~mid-wing underside, each side.
+	# Lift strut from the lower fuselage to the wing underside at mid-span. The
+	# wing sits at y=0.66 with dihedral, so its underside at span ~2.5 is near
+	# y=0.70 — the strut top must reach there or it visibly floats below the wing.
 	for sign in [1.0, -1.0]:
-		var top := Vector3(sign * 2.6, 0.62, -1.5)
-		var bot := Vector3(sign * 0.45, -0.18, -1.35)
+		var top := Vector3(sign * 2.5, 0.70, -1.55)
+		var bot := Vector3(sign * 0.42, -0.38, -1.42)
 		_strut(top, bot, 0.05)
-		# Small jury strut.
-		_strut(Vector3(sign * 2.6, 0.62, -1.5), Vector3(sign * 2.2, 0.2, -1.65), 0.03)
+		# Small jury strut bracing the main strut to the wing near the attach.
+		_strut(Vector3(sign * 2.12, 0.44, -1.5), Vector3(sign * 2.45, 0.69, -1.62), 0.03)
 
 
 func _strut(a: Vector3, b: Vector3, thick: float) -> void:

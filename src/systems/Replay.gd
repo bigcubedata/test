@@ -1,28 +1,29 @@
 extends Node
 ## Flight recorder + instant-replay system (autoload singleton).
 ##
-## While flying (LIVE), every physics frame the aircraft's world transform and
-## a snapshot of the instrument state (FlightData) are pushed into a fixed-size
-## ring buffer — roughly the last two minutes of flight. Pressing Tab enters
-## REPLAY: the aircraft is frozen and its transform + instruments are driven
-## from the recorded samples, so the PFD/MFD show exactly what they showed at
-## the time. The chase camera tracks the played-back aircraft. Pressing Tab
-## again leaves replay and resumes live flight from where it was paused.
+## While flying (LIVE) the aircraft's world transform and a snapshot of the
+## instrument state are sampled at 30 Hz into a fixed ring buffer that holds
+## about eleven minutes of flight — enough for a full local pattern/flight, so
+## a replay covers the whole trip rather than just the last stretch. Pressing
+## Tab enters REPLAY: the aircraft is frozen and driven from the samples, so the
+## PFD/MFD replay faithfully. Samples are stored in flat packed arrays (not
+## per-frame dictionaries) to keep the long buffer cheap.
 ##
 ## Controls (REPLAY mode):
 ##   Tab          enter / leave replay
 ##   Space        play / pause
 ##   Left/Right   scrub backward / forward (hold)
-##   Up/Down      slower / faster playback (steps through 0.25x .. 4x)
+##   Up/Down      slower / faster playback
 
 enum Mode { LIVE, REPLAY }
 var mode: int = Mode.LIVE
 
-# Ring buffer. 120 Hz physics * 120 s = 14400 samples (~2 minutes of history).
-const CAPACITY := 14400
 const PHYS_HZ := 120.0
+const STRIDE := 4                 # sample every 4th physics frame -> 30 Hz
+const SAMPLE_HZ := PHYS_HZ / STRIDE
+const CAPACITY := 20000           # ~11 minutes at 30 Hz
 
-# Instrument fields mirrored each frame so playback reproduces the displays.
+# Instrument fields mirrored each sample so playback reproduces the displays.
 const FIELDS := [
 	"indicated_airspeed_kt", "true_airspeed_kt", "ground_speed_kt",
 	"altitude_ft", "altitude_agl_ft", "vertical_speed_fpm",
@@ -32,13 +33,19 @@ const FIELDS := [
 	"throttle_pct", "flaps_deg", "flaps_setting", "on_ground",
 	"stall_warning", "pos_x", "pos_z", "fuel_pct", "volts",
 ]
+# Fields that must be restored as bool / int rather than float.
+const BOOL_FIELDS := ["on_ground", "stall_warning"]
+const INT_FIELDS := ["flaps_setting"]
 
 const SPEEDS := [0.25, 0.5, 1.0, 2.0, 4.0]
 
-var _xforms: Array[Transform3D] = []
-var _snaps: Array = []
-var _head: int = 0       # next write slot
-var _count: int = 0      # number of valid samples
+var _nf := 0
+var _origin: PackedVector3Array = PackedVector3Array()
+var _quat: PackedFloat32Array = PackedFloat32Array()
+var _data: PackedFloat32Array = PackedFloat32Array()
+var _head: int = 0        # next write slot
+var _count: int = 0       # valid samples
+var _phase: int = 0       # physics-frame counter for the stride
 
 var aircraft: RigidBody3D
 
@@ -46,7 +53,6 @@ var _play_pos: float = 0.0     # fractional sample index [0, _count-1]
 var paused: bool = false
 var _speed_idx: int = 2        # index into SPEEDS (1.0x)
 
-# Saved live state so we can resume flight exactly where replay was entered.
 var _resume_xform: Transform3D
 var _resume_linvel: Vector3
 var _resume_angvel: Vector3
@@ -57,23 +63,38 @@ func register(ac: RigidBody3D) -> void:
 
 
 func _ready() -> void:
-	_xforms.resize(CAPACITY)
-	_snaps.resize(CAPACITY)
-
-
-# Called by the aircraft every physics frame while flying.
-func capture(xform: Transform3D) -> void:
-	if mode != Mode.LIVE:
-		return
-	_xforms[_head] = xform
-	_snaps[_head] = _snapshot()
-	_head = (_head + 1) % CAPACITY
-	_count = mini(_count + 1, CAPACITY)
+	_nf = FIELDS.size()
+	_origin.resize(CAPACITY)
+	_quat.resize(CAPACITY * 4)
+	_data.resize(CAPACITY * _nf)
 
 
 func clear() -> void:
 	_head = 0
 	_count = 0
+	_phase = 0
+
+
+# Called by the aircraft every physics frame while flying; strides to 30 Hz.
+func capture(xform: Transform3D) -> void:
+	if mode != Mode.LIVE:
+		return
+	_phase += 1
+	if _phase < STRIDE:
+		return
+	_phase = 0
+	var i := _head
+	_origin[i] = xform.origin
+	var q := xform.basis.get_rotation_quaternion()
+	_quat[i * 4 + 0] = q.x
+	_quat[i * 4 + 1] = q.y
+	_quat[i * 4 + 2] = q.z
+	_quat[i * 4 + 3] = q.w
+	var base := i * _nf
+	for k in range(_nf):
+		_data[base + k] = float(FlightData.get(FIELDS[k]))
+	_head = (_head + 1) % CAPACITY
+	_count = mini(_count + 1, CAPACITY)
 
 
 func is_replaying() -> bool:
@@ -84,7 +105,6 @@ func playback_speed() -> float:
 	return SPEEDS[_speed_idx]
 
 
-# Position within the replay, 0..1, and elapsed/total seconds.
 func progress() -> float:
 	if _count <= 1:
 		return 0.0
@@ -92,11 +112,11 @@ func progress() -> float:
 
 
 func elapsed_sec() -> float:
-	return _play_pos / PHYS_HZ
+	return _play_pos / SAMPLE_HZ
 
 
 func total_sec() -> float:
-	return maxf(0.0, (_count - 1)) / PHYS_HZ
+	return maxf(0.0, (_count - 1)) / SAMPLE_HZ
 
 
 func _process(_delta: float) -> void:
@@ -118,17 +138,16 @@ func _process(_delta: float) -> void:
 func _physics_process(_delta: float) -> void:
 	if mode != Mode.REPLAY or _count == 0:
 		return
-
-	# Scrub with the roll keys; otherwise advance unless paused.
+	# Advance in sample units: SAMPLE_HZ/PHYS_HZ samples per physics tick = 1x.
+	var step := SAMPLE_HZ / PHYS_HZ
 	var scrub := Input.get_axis("roll_left", "roll_right")
 	if absf(scrub) > 0.01:
-		_play_pos = clampf(_play_pos + scrub * 6.0, 0.0, float(_count - 1))
+		_play_pos = clampf(_play_pos + scrub * 2.0, 0.0, float(_count - 1))
 	elif not paused:
-		_play_pos += playback_speed()
+		_play_pos += playback_speed() * step
 		if _play_pos >= float(_count - 1):
 			_play_pos = float(_count - 1)
 			paused = true     # hold on the last frame
-
 	_apply_sample(_play_pos)
 
 
@@ -138,7 +157,6 @@ func _enter_replay() -> void:
 	mode = Mode.REPLAY
 	paused = false
 	_play_pos = 0.0
-	# Remember the live state so we can hand control back later.
 	_resume_xform = aircraft.global_transform
 	_resume_linvel = aircraft.linear_velocity
 	_resume_angvel = aircraft.angular_velocity
@@ -162,33 +180,30 @@ func _apply_sample(pos: float) -> void:
 	var f := pos - float(i)
 	var xa := _read_xform(i)
 	var xb := _read_xform(j)
-	# Interpolate position and rotation for smooth slow-motion / scrubbing.
 	var origin := xa.origin.lerp(xb.origin, f)
-	var qa := xa.basis.get_rotation_quaternion()
-	var qb := xb.basis.get_rotation_quaternion()
-	var rot := qa.slerp(qb, f)
+	var rot := xa.basis.get_rotation_quaternion().slerp(xb.basis.get_rotation_quaternion(), f)
 	aircraft.global_transform = Transform3D(Basis(rot), origin)
-	_restore(_read_snap(i))
+	_restore(i)
+
+
+func _slot(i: int) -> int:
+	return (_head - _count + i + CAPACITY) % CAPACITY
 
 
 func _read_xform(i: int) -> Transform3D:
-	var idx := (_head - _count + i + CAPACITY) % CAPACITY
-	return _xforms[idx]
+	var idx := _slot(i)
+	var q := Quaternion(_quat[idx * 4], _quat[idx * 4 + 1], _quat[idx * 4 + 2], _quat[idx * 4 + 3])
+	return Transform3D(Basis(q), _origin[idx])
 
 
-func _read_snap(i: int) -> Dictionary:
-	var idx := (_head - _count + i + CAPACITY) % CAPACITY
-	return _snaps[idx]
-
-
-func _snapshot() -> Dictionary:
-	var d := {}
-	for field in FIELDS:
-		d[field] = FlightData.get(field)
-	return d
-
-
-func _restore(d: Dictionary) -> void:
-	for field in FIELDS:
-		if d.has(field):
-			FlightData.set(field, d[field])
+func _restore(i: int) -> void:
+	var base := _slot(i) * _nf
+	for k in range(_nf):
+		var field: String = FIELDS[k]
+		var v := _data[base + k]
+		if field in BOOL_FIELDS:
+			FlightData.set(field, v > 0.5)
+		elif field in INT_FIELDS:
+			FlightData.set(field, int(round(v)))
+		else:
+			FlightData.set(field, v)
