@@ -38,11 +38,6 @@ func density(alt_m: float) -> float:
 	var t := temperature(alt_m)
 	var p := pressure(alt_m)
 	return p / (R * t)
-
-## Speed of sound [m/s] at the given altitude [m].
-func speed_of_sound(alt_m: float) -> float:
-	return sqrt(GAMMA * R * temperature(alt_m))
-
 ## Density ratio sigma = rho / rho0. Useful for converting true airspeed to
 ## indicated/equivalent airspeed and for de-rating engine power with altitude.
 func density_ratio(alt_m: float) -> float:

@@ -22,6 +22,7 @@ var _prev_on_ground := true
 var _rpm_s := 700.0         # smoothed values to avoid zipper noise
 var _thr_s := 0.0
 var _wind_s := 0.0
+var _buf := PackedVector2Array()   # reused block buffer (one push per fill)
 
 
 func _ready() -> void:
@@ -66,6 +67,8 @@ func _fill() -> void:
 	var wind_amp := _wind_s * 0.30
 	var stalling: bool = FlightData.stall_warning
 
+	if _buf.size() != frames:
+		_buf.resize(frames)
 	for i in range(frames):
 		# --- Engine: fundamental + harmonics + a sub for the lope ---
 		_eng_phase += f0 / SR
@@ -97,4 +100,6 @@ func _fill() -> void:
 			_td_env *= 0.9994
 
 		var smp := clampf((e + w + s + td) * 0.7, -1.0, 1.0)
-		_playback.push_frame(Vector2(smp, smp))
+		_buf[i] = Vector2(smp, smp)
+	# One native call per block instead of one per sample (~22k/sec).
+	_playback.push_buffer(_buf)

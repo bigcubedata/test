@@ -26,18 +26,12 @@ const V_ETA_PEAK: float = 62.0         # m/s (~120 kt) where efficiency peaks
 
 var rpm: float = IDLE_RPM
 var throttle: float = 0.0              # 0..1
-var mixture: float = 1.0               # 0..1 (1 = full rich)
-var running: bool = true
+var mixture: float = 1.0               # 0..1 (1 = full rich; hook for leaning)
 var torque_nm: float = 0.0             # shaft reaction torque (for roll coupling)
 
 ## Advance current engine state. dt seconds, true airspeed v [m/s],
 ## altitude [m]. Returns thrust [N] available along the thrust axis.
 func update(dt: float, v: float, alt_m: float) -> float:
-	if not running:
-		rpm = move_toward(rpm, 0.0, 1500.0 * dt)
-		torque_nm = 0.0
-		return 0.0
-
 	# Target RPM: idle at closed throttle, redline at full. Real fixed-pitch
 	# RPM also rises with airspeed (prop unloads); fold in a small term.
 	var airspeed_unload := clampf(v / 70.0, 0.0, 1.0) * 150.0
@@ -60,15 +54,12 @@ func update(dt: float, v: float, alt_m: float) -> float:
 	var eta := _prop_efficiency(v)
 
 	# Useful thrust from power: T = eta * P / V. As V -> 0 this diverges, so
-	# blend toward a finite static-thrust estimate.
+	# fade smoothly from the momentum-theory static estimate into the
+	# min(static, dynamic) regime over the first few m/s — no step at a gate.
 	var static_thrust := _static_thrust(shaft_power_w)
-	var dynamic_thrust := 0.0
-	if v > 1.0:
-		dynamic_thrust = eta * shaft_power_w / v
-	# Use the smaller of the two so we never exceed the momentum-theory cap.
-	var thrust := static_thrust
-	if v > 1.0:
-		thrust = minf(static_thrust, dynamic_thrust)
+	var dynamic_thrust := eta * shaft_power_w / maxf(v, 0.5)
+	var blend := clampf(v / 8.0, 0.0, 1.0)
+	var thrust := lerpf(static_thrust, minf(static_thrust, dynamic_thrust), blend)
 	return maxf(thrust, 0.0)
 
 ## Momentum-theory static thrust estimate from shaft power and disc area.

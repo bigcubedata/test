@@ -306,6 +306,8 @@ func _draw_wind(s: Vector2) -> void:
 		tip, c + dir * arm - side * 4.5 * _u, c + dir * arm + side * 4.5 * _u]), C_WHITE)
 	_text(Vector2(ox + 34 * _u, oy + 28 * _u), "%03d°" % roundi(FlightData.wind_dir_deg), 13, C_WHITE)
 	_text(Vector2(ox + 34 * _u, oy + 44 * _u), "%d KT" % roundi(spd), 13, C_WHITE)
+	# Active preset (cycled with V), so the pilot sees what V just selected.
+	_text(Vector2(ox, oy + 60 * _u), Wind.preset_name(), 11, Color(0.6, 0.65, 0.7))
 
 
 # --------------------------------------------------------------------------

@@ -32,7 +32,7 @@ const FIELDS := [
 	"engine_rpm", "manifold_pressure_inhg", "fuel_flow_gph", "oil_temp_c",
 	"throttle_pct", "flaps_deg", "flaps_setting", "on_ground",
 	"stall_warning", "pos_x", "pos_z", "fuel_pct", "volts",
-	"wind_dir_deg", "wind_speed_kt",
+	"wind_dir_deg", "wind_speed_kt", "track_deg",
 ]
 # Fields that must be restored as bool / int rather than float.
 const BOOL_FIELDS := ["on_ground", "stall_warning"]
@@ -57,6 +57,10 @@ var _speed_idx: int = 2        # index into SPEEDS (1.0x)
 var _resume_xform: Transform3D
 var _resume_linvel: Vector3
 var _resume_angvel: Vector3
+# Control-authoritative state that playback overwrites and live flight reads.
+var _resume_flaps: int = 0
+var _resume_flaps_deg: float = 0.0
+var _resume_brake: bool = false
 
 
 func register(ac: RigidBody3D) -> void:
@@ -161,6 +165,9 @@ func _enter_replay() -> void:
 	_resume_xform = aircraft.global_transform
 	_resume_linvel = aircraft.linear_velocity
 	_resume_angvel = aircraft.angular_velocity
+	_resume_flaps = FlightData.flaps_setting
+	_resume_flaps_deg = FlightData.flaps_deg
+	_resume_brake = FlightData.parking_brake
 	aircraft.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
 	aircraft.freeze = true
 	# The camera switches itself to an orbit while is_replaying() is true.
@@ -173,6 +180,11 @@ func _exit_replay() -> void:
 		aircraft.global_transform = _resume_xform
 		aircraft.linear_velocity = _resume_linvel
 		aircraft.angular_velocity = _resume_angvel
+	# Playback overwrote the pilot's configuration via _restore(); hand back
+	# the flaps/brake the aircraft actually had when replay was entered.
+	FlightData.flaps_setting = _resume_flaps
+	FlightData.flaps_deg = _resume_flaps_deg
+	FlightData.parking_brake = _resume_brake
 
 
 func _apply_sample(pos: float) -> void:

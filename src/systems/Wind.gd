@@ -27,11 +27,16 @@ var _turb: Array = [FastNoiseLite.new(), FastNoiseLite.new(), FastNoiseLite.new(
 
 
 func _ready() -> void:
+	# frequency = 1.0 so the hand-tuned time/space scales in sample() act as
+	# written (FastNoiseLite's default of 0.01 would slow them all 100x and
+	# freeze the gusts).
 	_gust_n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	_gust_n.seed = 7
+	_gust_n.frequency = 1.0
 	for i in range(3):
 		_turb[i].noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 		_turb[i].seed = 100 + i * 37
+		_turb[i].frequency = 1.0
 
 
 func _process(_delta: float) -> void:

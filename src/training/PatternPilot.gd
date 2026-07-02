@@ -116,21 +116,21 @@ func _physics_process(dt: float) -> void:
 		Leg.UPWIND:
 			ac.engine.throttle = 1.0
 			_hold_track_hdg(0.0, 0.0, x, vx, omega)
-			_pitch_att(_climb_att(ias, 74.0), omega)
+			_pitch_att(_climb_att(ias, FlightData.VY), omega)
 			_yaw_coord(omega)
 			if agl >= 500.0:
 				_set_leg(Leg.XWIND_TURN)
 		Leg.XWIND_TURN:
 			ac.engine.throttle = 1.0
 			_bank_to_heading(270.0, omega, 20.0)
-			_pitch_att(_climb_att(ias, 74.0) - 1.0, omega)
+			_pitch_att(_climb_att(ias, FlightData.VY) - 1.0, omega)
 			_yaw_coord(omega)
 			if _hdg_err(270.0) < 8.0:
 				_set_leg(Leg.XWIND)
 		Leg.XWIND:
 			ac.engine.throttle = 1.0
 			_bank_to_heading(270.0, omega, 20.0)
-			_pitch_att(_climb_att(ias, 74.0), omega)
+			_pitch_att(_climb_att(ias, FlightData.VY), omega)
 			_yaw_coord(omega)
 			if x <= DOWNWIND_X + 400.0:
 				_set_leg(Leg.DWN_TURN)

@@ -23,8 +23,10 @@ const RWY_Z2 := 550.0
 const RWY_W := 45.0
 
 const MAP_RANGE_M := 2200.0  # metres from centre to map edge
+const REF_H := 430.0         # reference height: scale text/bars like the PFD
 
 var _font: Font
+var _u := 1.0
 
 
 func _ready() -> void:
@@ -37,6 +39,7 @@ func _process(_delta: float) -> void:
 
 func _draw() -> void:
 	var s := size
+	_u = s.y / REF_H
 	draw_rect(Rect2(Vector2.ZERO, s), C_BG)
 	var split := s.x * 0.34
 	_draw_engine(Rect2(0, 0, split, s.y))
@@ -48,11 +51,11 @@ func _draw() -> void:
 #  Engine indication (left column)
 # --------------------------------------------------------------------------
 func _draw_engine(r: Rect2) -> void:
-	var x0 := r.position.x + 8
-	var w := r.size.x - 16
-	var y := r.position.y + 22
-	_t(Vector2(x0, y - 6), "ENGINE", 15, C_TEXT)
-	y += 10
+	var x0 := r.position.x + 8 * _u
+	var w := r.size.x - 16 * _u
+	var y := r.position.y + 22 * _u
+	_t(Vector2(x0, y - 6 * _u), "ENGINE", 15, C_TEXT)
+	y += 10 * _u
 
 	# RPM (big horizontal bar with redline).
 	y = _bar(x0, y, w, "RPM", FlightData.engine_rpm, 0, 2700, 2700, "%d")
@@ -60,20 +63,20 @@ func _draw_engine(r: Rect2) -> void:
 	y = _bar(x0, y, w, "FFLOW", FlightData.fuel_flow_gph, 0, 20, 99, "%.1f")
 	y = _bar(x0, y, w, "OIL °F", FlightData.oil_temp_c * 1.8 + 32.0, 100, 250, 245, "%d")
 	y = _bar(x0, y, w, "OIL P", lerpf(25, 60, clampf(FlightData.engine_rpm / 2700.0, 0, 1)), 0, 100, 100, "%d")
-	y += 8
+	y += 8 * _u
 
 	# Fuel (US gallons; C172S holds 53 usable) + volts.
 	_t(Vector2(x0, y), "FUEL  %d GAL" % roundi(FlightData.fuel_pct * 53.0), 14, C_GREEN)
-	y += 20
+	y += 20 * _u
 	_t(Vector2(x0, y), "VOLTS %.1f" % FlightData.volts, 14, C_GREEN)
-	y += 20
+	y += 20 * _u
 	_t(Vector2(x0, y), "FLAPS %d" % int(FlightData.flaps_deg), 14, C_TEXT)
 
 
 func _bar(x: float, y: float, w: float, label: String, val: float,
 		lo: float, hi: float, redline: float, fmt: String) -> float:
 	_t(Vector2(x, y), label, 12, C_TEXT)
-	var bar := Rect2(x, y + 4, w, 12)
+	var bar := Rect2(x, y + 4 * _u, w, 12 * _u)
 	draw_rect(bar, Color(0.12, 0.12, 0.15))
 	var frac := clampf((val - lo) / (hi - lo), 0.0, 1.0)
 	var col := C_GREEN
@@ -81,8 +84,8 @@ func _bar(x: float, y: float, w: float, label: String, val: float,
 		col = C_RED
 	draw_rect(Rect2(bar.position, Vector2(bar.size.x * frac, bar.size.y)), col)
 	draw_rect(bar, Color(0.4, 0.4, 0.45), false, 1.0)
-	_t(Vector2(x + w - 52, y), fmt % val, 13, C_GREEN)
-	return y + 30
+	_t(Vector2(x + w - 52 * _u, y), fmt % val, 13, C_GREEN)
+	return y + 30 * _u
 
 
 # --------------------------------------------------------------------------
@@ -144,8 +147,10 @@ func _draw_map(r: Rect2) -> void:
 	var npos := center + Vector2(-sinh, -cosh) * (radius - 6)
 	_t(npos - Vector2(5, -5), "N", 14, C_CYAN)
 
-	# Track line ahead.
-	draw_line(center, center - Vector2(0, radius * 0.6), C_MAG, 2.0)
+	# Track line: the actual ground track relative to the heading-up map, so
+	# a crosswind crab shows as the line leaning away from straight up.
+	var trel := deg_to_rad(FlightData.track_deg - FlightData.heading_deg)
+	draw_line(center, center + Vector2(sin(trel), -cos(trel)) * (radius * 0.6), C_MAG, 2.0)
 
 	# Aircraft symbol (always centre, pointing up).
 	var sym := PackedVector2Array([
@@ -156,13 +161,13 @@ func _draw_map(r: Rect2) -> void:
 	var d36 := Vector2(FlightData.pos_x - RWY_X, FlightData.pos_z - RWY_Z2).length() / 1852.0
 
 	# Data readouts.
-	_t(Vector2(r.position.x + 8, r.position.y + r.size.y - 42),
+	_t(Vector2(r.position.x + 8 * _u, r.position.y + r.size.y - 42 * _u),
 		"GS %d kt" % roundi(FlightData.ground_speed_kt), 14, C_GREEN)
-	_t(Vector2(r.position.x + 8, r.position.y + r.size.y - 26),
-		"TRK %03d" % roundi(FlightData.heading_deg), 14, C_GREEN)
-	_t(Vector2(r.position.x + 8, r.position.y + r.size.y - 10),
+	_t(Vector2(r.position.x + 8 * _u, r.position.y + r.size.y - 26 * _u),
+		"TRK %03d" % roundi(FlightData.track_deg), 14, C_GREEN)
+	_t(Vector2(r.position.x + 8 * _u, r.position.y + r.size.y - 10 * _u),
 		"RW36 %.1f nm" % d36, 14, C_CYAN)
-	_t(Vector2(r.position.x + r.size.x - 90, r.position.y + r.size.y - 10),
+	_t(Vector2(r.position.x + r.size.x - 90 * _u, r.position.y + r.size.y - 10 * _u),
 		"ALT %d" % roundi(FlightData.altitude_ft), 14, C_GREEN)
 
 
@@ -180,4 +185,4 @@ func _dash(a: Vector2, b: Vector2, col: Color, w: float, dash := 9.0, gap := 6.0
 
 
 func _t(pos: Vector2, text: String, fs: int, col: Color) -> void:
-	draw_string(_font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+	draw_string(_font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, roundi(fs * _u), col)

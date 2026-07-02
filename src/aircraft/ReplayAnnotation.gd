@@ -41,4 +41,4 @@ func _process(_delta: float) -> void:
 	var agl: int = roundi(FlightData.altitude_agl_ft)
 
 	modulate = C_DESC if fpa < -0.2 else (C_CLIMB if fpa > 0.2 else C_TEXT)
-	text = "GLIDE %+.1f°\nAGL %d ft" % [fpa, agl]
+	text = "GLIDE %+.1f°\nAGL %d ft\nG %.1f" % [fpa, agl, FlightData.load_factor]

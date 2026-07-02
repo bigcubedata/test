@@ -238,7 +238,7 @@ func _make_screen(ui_script: Script, pos: Vector3, w: float, h: float, rot: Vect
 	add_child(mi)
 	# On some backends (Forward+/MoltenVK on macOS) a ViewportTexture bound on
 	# the first frame comes back blank; re-bind it for a few frames to be safe.
-	_screens.append({"m": m, "sv": sv})
+	_screens.append({"m": m, "sv": sv, "ui": ui})
 
 
 # --------------------------------------------------------------------------
@@ -318,7 +318,16 @@ func _process(_delta: float) -> void:
 	if _camera == null:
 		_camera = get_tree().get_first_node_in_group("flight_camera")
 	if _camera:
-		visible = int(_camera.view) == 0 and not Replay.is_replaying()
+		var vis: bool = int(_camera.view) == 0 and not Replay.is_replaying()
+		if visible != vis:
+			visible = vis
+			# Hiding the cockpit does NOT stop SubViewports from re-rendering
+			# every frame — park them (and their instrument redraw loops) while
+			# an external view is up, and wake them when the pilot looks back in.
+			for s in _screens:
+				s.sv.render_target_update_mode = \
+					SubViewport.UPDATE_ALWAYS if vis else SubViewport.UPDATE_DISABLED
+				s.ui.set_process(vis)
 
 	# Re-bind the panel-screen viewport textures for the first few frames, in
 	# case the initial bind came back blank on this graphics backend.

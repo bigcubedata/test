@@ -85,9 +85,11 @@ func _orbit_input(event: InputEvent) -> void:
 			MOUSE_BUTTON_LEFT:
 				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if event.pressed else Input.MOUSE_MODE_VISIBLE
 			MOUSE_BUTTON_WHEEL_UP:
-				_orbit_dist = clampf(_orbit_dist - 1.5, 5.0, 60.0)
+				if event.pressed:   # wheel notches arrive as press+release pairs
+					_orbit_dist = clampf(_orbit_dist - 1.5, 5.0, 60.0)
 			MOUSE_BUTTON_WHEEL_DOWN:
-				_orbit_dist = clampf(_orbit_dist + 1.5, 5.0, 60.0)
+				if event.pressed:
+					_orbit_dist = clampf(_orbit_dist + 1.5, 5.0, 60.0)
 	elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		_orbit_yaw = wrapf(_orbit_yaw - event.relative.x * ORBIT_SENS, -180.0, 180.0)
 		_orbit_pitch = clampf(_orbit_pitch + event.relative.y * ORBIT_SENS, -85.0, 85.0)
@@ -102,6 +104,10 @@ func _physics_process(delta: float) -> void:
 		_orbit_yaw = 24.0
 		_orbit_pitch = 16.0
 		_orbit_dist = 14.0
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	elif _was_replaying and not replaying:
+		# Leaving replay mid-drag would otherwise strand the cursor captured
+		# (the release event lands in live mode, which ignores it).
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_was_replaying = replaying
 

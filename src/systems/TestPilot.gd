@@ -73,7 +73,7 @@ func _physics_process(dt: float) -> void:
 				phase = "climb"
 		"climb":
 			ac.engine.throttle = 1.0
-			ac.input_pitch = clampf((ias - 74.0) * 0.045 - omega.x * 3.0, -0.7, 0.7)
+			ac.input_pitch = clampf((ias - FlightData.VY) * 0.045 - omega.x * 3.0, -0.7, 0.7)
 			if climb_t0 < 0.0 and alt >= 400.0:
 				climb_t0 = t
 			if climb_t0 >= 0.0 and alt >= 1400.0:

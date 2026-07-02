@@ -29,8 +29,10 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, s), C_BG)
 	var r := s.x * 0.42
 	var cx := s.x * 0.5
-	_asi(Vector2(cx, s.y * 0.18), r)
+	# Attitude first: its rotated sky/ground spills past its dial and is masked
+	# with full-width background bands, so the other dials must draw on top.
 	_attitude(Vector2(cx, s.y * 0.5), r)
+	_asi(Vector2(cx, s.y * 0.18), r)
 	_altimeter(Vector2(cx, s.y * 0.82), r)
 
 
@@ -80,8 +82,18 @@ func _attitude(c: Vector2, r: float) -> void:
 	draw_rect(Rect2(-big, off, big * 2, big), C_GND)
 	draw_line(Vector2(-big, off), Vector2(big, off), Color(1, 1, 1), maxf(1.0, r * 0.03))
 	draw_set_transform_matrix(Transform2D.IDENTITY)
-	# Mask the square corners outside the dial with a thick bg ring.
-	draw_arc(c, r + r * 0.45, 0, TAU, 48, C_BG, r * 0.9)
+	# Mask everything outside the dial: full-width background bands above,
+	# below and beside the dial's bounding square, then a ring to round off
+	# the square-to-circle corners. (A ring alone can't cover the tall
+	# standby viewport, where the rotated sky/ground spills far vertically.)
+	var s := size
+	var spill := r * 3.5
+	var hw := r * 1.1
+	draw_rect(Rect2(0, c.y - spill, s.x, spill - hw), C_BG)
+	draw_rect(Rect2(0, c.y + hw, s.x, spill - hw), C_BG)
+	draw_rect(Rect2(0, c.y - hw, c.x - hw, hw * 2.0), C_BG)
+	draw_rect(Rect2(c.x + hw, c.y - hw, s.x - c.x - hw, hw * 2.0), C_BG)
+	draw_arc(c, r * 1.28, 0, TAU, 48, C_BG, r * 0.6)
 	draw_arc(c, r, 0, TAU, 48, C_RIM, maxf(2.0, r * 0.06))
 	# Fixed miniature aircraft.
 	draw_line(c + Vector2(-r * 0.5, 0), c + Vector2(-r * 0.15, 0), C_YELLOW, maxf(2.0, r * 0.05))

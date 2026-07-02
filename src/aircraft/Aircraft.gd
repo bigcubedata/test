@@ -146,6 +146,7 @@ func reset() -> void:
 	rudder = 0.0
 	brakes_on = false
 	FlightData.reset_state()
+	Replay.clear()   # a respawn starts a fresh recording
 
 
 func _process(_delta: float) -> void:
@@ -236,7 +237,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	# --- Lift coefficient with stall --------------------------------------
 	var cl_max_eff := CL_MAX + 0.4 * flap_frac
 	var cl_linear := CL0 + CL_ALPHA * alpha + dCL_flap
-	var cl := _apply_stall(cl_linear, alpha, cl_max_eff)
+	var cl := _apply_stall(cl_linear, alpha, cl_max_eff, CL0 + dCL_flap)
 
 	# --- Drag: parasite + induced (with ground effect) + flaps + stall ----
 	# Ground effect: near the runway the wing's induced drag collapses
@@ -328,12 +329,16 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		var w_l := Wind.sample(xform.origin - basis.x * 4.5)
 		var w_r := Wind.sample(xform.origin + basis.x * 4.5)
 		var w_t := Wind.sample(xform.origin + basis.z * 4.0)
+		# Signs: an updraft on a wingtip RAISES that wing (+roll = roll left,
+		# so a right-tip updraft is positive); an updraft at the tail pushes
+		# the nose DOWN; a rightward gust on the fin pushes the tail right,
+		# i.e. the nose LEFT (+yaw).
 		roll_moment += 0.12 * rho * airspeed * WING_AREA * WING_SPAN \
-			* (w_l - w_r).dot(basis.y)
+			* (w_r - w_l).dot(basis.y)
 		pitch_moment += 0.6 * rho * airspeed * WING_AREA * MEAN_CHORD \
 			* (wind - w_t).dot(basis.y)
 		yaw_moment += 0.05 * rho * airspeed * WING_AREA * WING_SPAN \
-			* (wind - w_t).dot(basis.x)
+			* (w_t - wind).dot(basis.x)
 
 	# --- Pre-stall buffet ---------------------------------------------------
 	# Separated flow shakes the airframe just before and through the stall —
@@ -406,17 +411,21 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 
 
 ## Smoothly limit CL past the stall angle so lift collapses instead of
-## growing without bound. Uses a soft blend around ALPHA_STALL.
-func _apply_stall(cl_linear: float, alpha: float, cl_max: float) -> float:
+## growing without bound. The post-stall blend starts from the ACTUAL CL at
+## the stall boundary (camber/flaps shift the curve, so the negative-alpha
+## boundary CL is much smaller in magnitude than +cl_max) — this keeps the
+## lift curve continuous through both stall boundaries.
+func _apply_stall(cl_linear: float, alpha: float, cl_max: float, cl_camber: float) -> float:
 	var a := absf(alpha)
 	if a <= ALPHA_STALL:
 		return clampf(cl_linear, -cl_max, cl_max)
 	# Past stall: lift breaks down toward a low post-stall plateau — quickly,
 	# so the break is a definite event rather than a mush.
 	# (a > ALPHA_STALL here, so alpha is non-zero and its sign is well-defined.)
+	var s := signf(alpha)
+	var boundary := clampf(cl_camber + CL_ALPHA * ALPHA_STALL * s, -cl_max, cl_max)
 	var over := clampf((a - ALPHA_STALL) / 0.18, 0.0, 1.0)
-	var stalled_cl := lerpf(cl_max, 0.55, over)
-	return signf(alpha) * stalled_cl
+	return lerpf(boundary, 0.55 * s, over)
 
 
 func _publish_flight_data(state: PhysicsDirectBodyState3D, airspeed: float,
@@ -428,6 +437,11 @@ func _publish_flight_data(state: PhysicsDirectBodyState3D, airspeed: float,
 	FlightData.indicated_airspeed_kt = Atmosphere.tas_to_ias(airspeed, alt_m) * FlightData.MS_TO_KNOTS
 	var horiz := Vector3(state.linear_velocity.x, 0.0, state.linear_velocity.z)
 	FlightData.ground_speed_kt = horiz.length() * FlightData.MS_TO_KNOTS
+	# Ground track from the velocity vector (crab makes it differ from heading).
+	if FlightData.ground_speed_kt > 2.0:
+		FlightData.track_deg = fposmod(rad_to_deg(atan2(horiz.x, -horiz.z)), 360.0)
+	else:
+		FlightData.track_deg = FlightData.heading_deg
 	FlightData.altitude_ft = alt_m * FlightData.M_TO_FEET
 	FlightData.altitude_agl_ft = maxf(0.0, state.transform.origin.y - GEAR_HEIGHT) * FlightData.M_TO_FEET
 	FlightData.vertical_speed_fpm = state.linear_velocity.y * FlightData.MS_TO_FPM

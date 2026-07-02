@@ -37,7 +37,8 @@ func _m(c: Color, rough := 0.9, unshaded := false) -> StandardMaterial3D:
 	return m
 
 
-func _box(sz: Vector3, pos: Vector3, mat: Material, rot := Vector3.ZERO) -> MeshInstance3D:
+func _box(sz: Vector3, pos: Vector3, mat: Material, rot := Vector3.ZERO,
+		shadow := true) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = sz
@@ -45,6 +46,8 @@ func _box(sz: Vector3, pos: Vector3, mat: Material, rot := Vector3.ZERO) -> Mesh
 	mi.material_override = mat
 	mi.position = pos
 	mi.rotation = rot
+	if not shadow:
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
 	return mi
 
@@ -73,12 +76,12 @@ func _runway_markings() -> void:
 
 	# Edge lines.
 	for s in [1.0, -1.0]:
-		_box(Vector3(0.9, 0.04, 1440.0), Vector3(s * 21.3, RWY_Y + 0.02, -200.0), paint)
+		_box(Vector3(0.9, 0.04, 1440.0), Vector3(s * 21.3, RWY_Y + 0.02, -200.0), paint, Vector3.ZERO, false)
 
 	# Dashed centreline (real runways use dashes, not a solid stripe).
 	var z := Z_NORTH + 95.0
 	while z < Z_SOUTH - 95.0:
-		_box(Vector3(0.9, 0.04, 30.0), Vector3(0.0, RWY_Y + 0.02, z + 15.0), paint)
+		_box(Vector3(0.9, 0.04, 30.0), Vector3(0.0, RWY_Y + 0.02, z + 15.0), paint, Vector3.ZERO, false)
 		z += 60.0
 
 	# Threshold piano keys, four each side of the centreline at both ends.
@@ -86,21 +89,21 @@ func _runway_markings() -> void:
 		var zk := (Z_SOUTH - 22.0) if endsign > 0.0 else (Z_NORTH + 22.0)
 		for i in range(4):
 			var x := 3.6 + i * 5.4
-			_box(Vector3(1.8, 0.04, 26.0), Vector3(x, RWY_Y + 0.02, zk), paint)
-			_box(Vector3(1.8, 0.04, 26.0), Vector3(-x, RWY_Y + 0.02, zk), paint)
+			_box(Vector3(1.8, 0.04, 26.0), Vector3(x, RWY_Y + 0.02, zk), paint, Vector3.ZERO, false)
+			_box(Vector3(1.8, 0.04, 26.0), Vector3(-x, RWY_Y + 0.02, zk), paint, Vector3.ZERO, false)
 
 	# Aiming-point bars ~300 m past each threshold.
 	for endsign in [1.0, -1.0]:
 		var za := (Z_SOUTH - 300.0) if endsign > 0.0 else (Z_NORTH + 300.0)
 		for s in [1.0, -1.0]:
-			_box(Vector3(3.0, 0.04, 45.0), Vector3(s * 8.5, RWY_Y + 0.02, za), paint)
+			_box(Vector3(3.0, 0.04, 45.0), Vector3(s * 8.5, RWY_Y + 0.02, za), paint, Vector3.ZERO, false)
 
 	# Painted runway numbers, oriented for the pilot on approach.
 	_number("36", Vector3(0.0, RWY_Y + 0.05, Z_SOUTH - 70.0), 0.0)
 	_number("18", Vector3(0.0, RWY_Y + 0.05, Z_NORTH + 70.0), 180.0)
 
 	# Taxiway centreline out to the apron.
-	_box(Vector3(62.0, 0.03, 0.5), Vector3(56.0, 0.27, 420.0), yellow)
+	_box(Vector3(62.0, 0.03, 0.5), Vector3(56.0, 0.27, 420.0), yellow, Vector3.ZERO, false)
 
 
 func _number(text: String, pos: Vector3, yaw_deg: float) -> void:
@@ -112,6 +115,7 @@ func _number(text: String, pos: Vector3, yaw_deg: float) -> void:
 	l.modulate = Color(0.92, 0.92, 0.9)
 	l.position = pos
 	l.rotation_degrees = Vector3(-90.0, yaw_deg, 0.0)
+	l.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(l)
 
 
@@ -126,8 +130,8 @@ func _airport() -> void:
 	var glassy := _m(Color(0.15, 0.22, 0.30), 0.3)
 
 	# Taxiway + apron.
-	_box(Vector3(70.0, 0.24, 16.0), Vector3(57.0, 0.12, 420.0), asphalt)
-	_box(Vector3(130.0, 0.22, 150.0), Vector3(157.0, 0.11, 430.0), concrete)
+	_box(Vector3(70.0, 0.24, 16.0), Vector3(57.0, 0.12, 420.0), asphalt, Vector3.ZERO, false)
+	_box(Vector3(130.0, 0.22, 150.0), Vector3(157.0, 0.11, 430.0), concrete, Vector3.ZERO, false)
 
 	# Hangar with a shallow roof cap and a big door strip.
 	_box(Vector3(42.0, 9.0, 30.0), Vector3(170.0, 4.5, 375.0), steel)
@@ -164,6 +168,10 @@ func _fields() -> void:
 		Color(0.33, 0.42, 0.20), Color(0.45, 0.42, 0.22), Color(0.52, 0.47, 0.26),
 		Color(0.29, 0.38, 0.19), Color(0.42, 0.37, 0.18), Color(0.37, 0.45, 0.23),
 	]
+	# One shared material per palette colour (46 patches, 6 materials).
+	var mats: Array = []
+	for c in palette:
+		mats.append(_m(c, 0.95))
 	for i in range(46):
 		var x := _rng.randf_range(-4200.0, 4200.0)
 		var z := _rng.randf_range(-4200.0, 4200.0)
@@ -173,11 +181,14 @@ func _fields() -> void:
 		var pm := PlaneMesh.new()
 		pm.size = Vector2(_rng.randf_range(200.0, 480.0), _rng.randf_range(160.0, 420.0))
 		mi.mesh = pm
-		mi.material_override = _m(palette[_rng.randi_range(0, palette.size() - 1)], 0.95)
+		mi.material_override = mats[_rng.randi_range(0, mats.size() - 1)]
 		mi.position = Vector3(x, 0.02 + 0.004 * i, z)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)
 
 	# Two hamlets: clusters of simple gabled houses.
+	var wall := _m(Color(0.78, 0.74, 0.68), 0.8)
+	var hroof := _m(Color(0.42, 0.28, 0.22), 0.8)
 	for center in [Vector2(-1900.0, 1500.0), Vector2(2400.0, -1700.0)]:
 		for i in range(8):
 			var hx: float = center.x + _rng.randf_range(-220.0, 220.0)
@@ -185,9 +196,8 @@ func _fields() -> void:
 			var w := _rng.randf_range(9.0, 16.0)
 			var d := _rng.randf_range(8.0, 14.0)
 			var h := _rng.randf_range(4.0, 6.5)
-			_box(Vector3(w, h, d), Vector3(hx, h * 0.5, hz), _m(Color(0.78, 0.74, 0.68), 0.8))
-			_box(Vector3(w + 1.0, 1.0, d + 1.0), Vector3(hx, h + 0.5, hz),
-				_m(Color(0.42, 0.28, 0.22), 0.8))
+			_box(Vector3(w, h, d), Vector3(hx, h * 0.5, hz), wall)
+			_box(Vector3(w + 1.0, 1.0, d + 1.0), Vector3(hx, h + 0.5, hz), hroof)
 
 
 # --------------------------------------------------------------------------
@@ -236,7 +246,8 @@ func _hills_and_lake() -> void:
 	for s in specs:
 		_cyl(0.0, s[2], s[3], Vector3(s[0], s[3] * 0.5 - 40.0, s[1]), _m(s[4], 1.0))
 
-	_cyl(430.0, 450.0, 0.06, Vector3(2600.0, 0.03, 2300.0), _m(Color(0.15, 0.30, 0.42), 0.15))
+	var lake := _cyl(430.0, 450.0, 0.06, Vector3(2600.0, 0.03, 2300.0), _m(Color(0.15, 0.30, 0.42), 0.15))
+	lake.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 # --------------------------------------------------------------------------

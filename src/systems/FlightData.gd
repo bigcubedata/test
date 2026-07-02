@@ -23,6 +23,7 @@ var vertical_speed_fpm: float = 0.0
 var pitch_deg: float = 0.0               # nose up positive
 var roll_deg: float = 0.0                # right wing down positive
 var heading_deg: float = 0.0             # 0-360, magnetic-ish (true here)
+var track_deg: float = 0.0               # ground track (falls back to heading when slow)
 var slip_skid: float = 0.0               # lateral g, drives the inclinometer ball
 var angle_of_attack_deg: float = 0.0
 var load_factor: float = 1.0             # g
@@ -51,17 +52,16 @@ var volts: float = 24.0
 var wind_dir_deg: float = 0.0    # direction the wind blows FROM
 var wind_speed_kt: float = 0.0
 
-# --- V-speeds for the C172S (KIAS), used by the airspeed tape colour arcs -
+# --- V-speeds for the C172S (KIAS): airspeed-tape arcs + pilot references -
 const VS0: float = 40.0    # stall, full flaps (bottom of white arc)
 const VS1: float = 48.0    # stall, clean (bottom of green arc)
 const VFE: float = 85.0    # max flaps extended (top of white arc)
 const VNO: float = 129.0   # max structural cruising (top of green arc)
 const VNE: float = 163.0   # never exceed (red line)
-const VGLIDE: float = 68.0 # best glide
-const VY: float = 74.0     # best rate of climb
-const VX: float = 62.0     # best angle of climb
+const VY: float = 74.0     # best rate of climb (used by the demo pilots)
 
-## Reset all derived readouts. Called when the aircraft is respawned.
+## Reset all derived readouts and pilot-set configuration. Called when the
+## aircraft is respawned.
 func reset_state() -> void:
 	indicated_airspeed_kt = 0.0
 	true_airspeed_kt = 0.0
@@ -73,3 +73,7 @@ func reset_state() -> void:
 	angle_of_attack_deg = 0.0
 	load_factor = 1.0
 	stall_warning = false
+	parking_brake = false
+	flaps_setting = 0
+	flaps_deg = 0.0
+	track_deg = 0.0
