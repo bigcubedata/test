@@ -239,13 +239,15 @@ func _build_tail() -> void:
 #  Fixed tricycle gear with wheel fairings
 # --------------------------------------------------------------------------
 func _build_gear() -> void:
-	# Main gear: spring legs out to faired wheels.
+	# Wheel heights/stations follow the physics gear (contact plane ~1.1 m
+	# below the CG at rest) so the tires roll on the runway surface instead of
+	# sinking into it.
 	for sign in [1.0, -1.0]:
-		_strut(Vector3(sign * 0.18, -0.30, -1.0), Vector3(sign * 1.05, -1.05, -1.0), 0.06)
-		_wheel(Vector3(sign * 1.05, -1.18, -1.0))
-	# Nose gear (under the engine on the shorter cowl).
-	_strut(Vector3(0.0, -0.45, -2.75), Vector3(0.0, -1.05, -2.95), 0.07)
-	_wheel(Vector3(0.0, -1.18, -2.95))
+		_strut(Vector3(sign * 0.18, -0.30, -0.45), Vector3(sign * 1.05, -0.72, -0.45), 0.06)
+		_wheel(Vector3(sign * 1.05, -0.85, -0.45))
+	# Nose gear under the cowl.
+	_strut(Vector3(0.0, -0.40, -2.45), Vector3(0.0, -0.72, -2.60), 0.07)
+	_wheel(Vector3(0.0, -0.85, -2.60))
 
 
 func _wheel(pos: Vector3) -> void:

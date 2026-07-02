@@ -9,7 +9,8 @@ extends Node3D
 
 const Z_SOUTH := 550.0     # runway 36 threshold (depart to the north)
 const Z_NORTH := -950.0    # runway 18 threshold
-const RWY_Y := 0.30        # top surface of the runway slab
+const RWY_Y := 0.02        # top surface of the runway slab (flush with the
+                           # physics ground plane at y=0 so wheels sit on it)
 
 var _rng := RandomNumberGenerator.new()
 

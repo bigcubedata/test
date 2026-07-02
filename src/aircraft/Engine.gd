@@ -28,12 +28,14 @@ var rpm: float = IDLE_RPM
 var throttle: float = 0.0              # 0..1
 var mixture: float = 1.0               # 0..1 (1 = full rich)
 var running: bool = true
+var torque_nm: float = 0.0             # shaft reaction torque (for roll coupling)
 
 ## Advance current engine state. dt seconds, true airspeed v [m/s],
 ## altitude [m]. Returns thrust [N] available along the thrust axis.
 func update(dt: float, v: float, alt_m: float) -> float:
 	if not running:
 		rpm = move_toward(rpm, 0.0, 1500.0 * dt)
+		torque_nm = 0.0
 		return 0.0
 
 	# Target RPM: idle at closed throttle, redline at full. Real fixed-pitch
@@ -44,10 +46,15 @@ func update(dt: float, v: float, alt_m: float) -> float:
 	# Engine inertia: RPM lags toward target.
 	rpm = move_toward(rpm, target_rpm, 1800.0 * dt)
 
-	# Shaft power: scales with throttle and air density (normally aspirated).
+	# Shaft power: scales with throttle and air density (normally aspirated),
+	# and with RPM — a fixed-pitch engine at low RPM cannot make rated power,
+	# so power (and reaction torque) build as the prop spools up.
 	var sigma := Atmosphere.density_ratio(alt_m)
-	var power_fraction := lerpf(0.08, 1.0, throttle) * mixture
+	var power_fraction := lerpf(0.08, 1.0, throttle) * mixture * (rpm / MAX_RPM)
 	var shaft_power_w := RATED_POWER_HP * HP_TO_WATTS * power_fraction * sigma
+
+	# Shaft reaction torque (Q = P / omega) for the airframe roll coupling.
+	torque_nm = shaft_power_w / maxf(rpm * TAU / 60.0, 30.0)
 
 	# Propeller efficiency vs airspeed (bell-ish curve, zero at V=0).
 	var eta := _prop_efficiency(v)

@@ -30,7 +30,8 @@ const ALPHA_STALL: float = 0.2793    # 16 deg, clean stall AoA
 const CL_MAX: float = 1.6            # clean max lift coefficient
 
 # --- Drag -----------------------------------------------------------------
-const CD0: float = 0.032            # parasite drag (gear down, fixed prop)
+const CD0: float = 0.0345           # parasite drag (gear down, fixed prop);
+                                    # tuned against POH cruise/climb numbers
 
 # --- Stability & control (moment coefficients, per radian unless noted) ---
 # Signs are chosen for Godot's body frame (forward = -Z, up = +Y, right = +X)
@@ -53,12 +54,39 @@ const MAX_RUDDER: float = 0.30
 const CONTROL_RATE: float = 2.5     # how fast surfaces move toward command
 const TRIM_RATE: float = 0.15       # elevator trim slew (per second)
 
-# --- Ground handling ------------------------------------------------------
+# --- Propulsion coupling (what makes a single truly feel like a single) ----
+const PROP_DISC_AREA: float = 2.85      # m^2 (75-inch McCauley)
+const TAIL_WASH_FRACTION: float = 0.55  # share of far-wake slipstream q over the tail
+const K_SLIPSTREAM_YAW: float = 0.30    # spiral slipstream: nose-left with power
+const K_PFACTOR: float = 1.6            # P-factor: nose-left with power at high alpha
+const K_TORQUE_ROLL: float = 0.6        # engine reaction torque rolls left
+
+# --- Stall behaviour --------------------------------------------------------
+const BUFFET_AMPLITUDE: float = 0.015   # pre-stall airframe buffet strength
+
+# --- Ground handling: three-point gear -------------------------------------
+# Each wheel is its own spring/damper contact with tire friction, so ground
+# attitude, rotation, braking pitch-down and steering all emerge from the
+# geometry instead of being scripted. Mains sit behind the CG (the nosewheel
+# carries ~8% of the weight, like the real aircraft).
 const GEAR_HEIGHT: float = 1.2      # wheel contact below CG [m]
-const GEAR_STIFFNESS: float = 90000.0
-const GEAR_DAMPING: float = 9000.0
-const ROLLING_FRICTION: float = 0.04
-const BRAKE_FRICTION: float = 0.5
+# Spring rates are matched to the static load split (nose ~15%, mains ~85%)
+# so an even-compression transient settles level instead of pitching; the
+# mains sit far enough behind the CG that gear forces can't tip it tail-down,
+# while the elevator can still rotate at ~55 KIAS once wing lift unloads them.
+const WHEELS := [
+	Vector3(0.0, -1.2, -2.0),       # nosewheel
+	Vector3(-1.05, -1.2, 0.45),     # left main
+	Vector3(1.05, -1.2, 0.45),      # right main
+	Vector3(0.0, -0.55, 3.3),       # tail tie-down skid (strike protection)
+]
+const WHEEL_STIFF := [18000.0, 51000.0, 51000.0, 40000.0]
+const WHEEL_DAMP := [3000.0, 8000.0, 8000.0, 4000.0]
+const ROLLING_FRICTION: float = 0.03
+const BRAKE_FRICTION: float = 0.45
+const MU_SIDE: float = 0.75         # lateral tire grip (tires resist skidding)
+const TIRE_CORNER_STIFF: float = 0.35   # side force per m/s of lateral slip
+const NOSE_STEER_ANGLE: float = 0.30    # rad of nosewheel steer at full pedal
 
 # --- Runtime state --------------------------------------------------------
 var engine := C172Engine.new()
@@ -71,6 +99,11 @@ var input_pitch: float = 0.0
 var input_roll: float = 0.0
 var input_yaw: float = 0.0
 var brakes_on: bool = false
+## When true, keyboard reading is skipped and input_* are driven externally
+## (test harness / future autopilot).
+var control_override: bool = false
+var _buffet_t: float = 0.0
+var _load_factor: float = 1.0
 
 var _spawn_transform: Transform3D
 var _spawn_velocity: Vector3 = Vector3.ZERO
@@ -124,11 +157,16 @@ func _process(_delta: float) -> void:
 
 
 func _read_input() -> void:
-	# Axis inputs (-1..1). Keyboard is digital; analog sticks map naturally.
+	if control_override:
+		return
+	# Axis inputs (-1..1). Keyboard is digital, so ramp the commanded input
+	# toward the key state instead of snapping — the yoke moves like a hand is
+	# on it, not a switch — and re-centre a little faster than it deflects.
 	# Yoke convention: Up arrow pushes the nose DOWN, Down arrow pulls it UP.
-	input_pitch = Input.get_axis("pitch_up", "pitch_down")
-	input_roll = Input.get_axis("roll_left", "roll_right")
-	input_yaw = Input.get_axis("yaw_left", "yaw_right")
+	var dt := get_process_delta_time()
+	input_pitch = _shape_axis(input_pitch, Input.get_axis("pitch_up", "pitch_down"), dt)
+	input_roll = _shape_axis(input_roll, Input.get_axis("roll_left", "roll_right"), dt)
+	input_yaw = _shape_axis(input_yaw, Input.get_axis("yaw_left", "yaw_right"), dt)
 
 	if Input.is_action_pressed("throttle_up"):
 		engine.throttle = clampf(engine.throttle + 0.6 * get_process_delta_time(), 0.0, 1.0)
@@ -151,6 +189,11 @@ func _read_input() -> void:
 
 	if Input.is_action_just_pressed("reset_aircraft"):
 		reset()
+
+
+func _shape_axis(current: float, target: float, dt: float) -> float:
+	var rate := 2.2 if absf(target) > 0.01 else 4.5
+	return move_toward(current, target, rate * dt)
 
 
 func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
@@ -195,9 +238,18 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	var cl_linear := CL0 + CL_ALPHA * alpha + dCL_flap
 	var cl := _apply_stall(cl_linear, alpha, cl_max_eff)
 
-	# --- Drag: parasite + induced + flaps --------------------------------
+	# --- Drag: parasite + induced (with ground effect) + flaps + stall ----
+	# Ground effect: near the runway the wing's induced drag collapses
+	# (McCormick h/b model). This is what makes the aircraft float in the
+	# flare instead of dropping on.
+	var h_over_b := clampf((xform.origin.y + 0.5) / WING_SPAN, 0.05, 1.1)
+	var ge := pow(16.0 * h_over_b, 2.0)
+	ge = ge / (1.0 + ge)
 	var k := 1.0 / (PI * OSWALD_E * ASPECT_RATIO)
-	var cd := CD0 + dCD_flap + k * cl * cl
+	var cd := CD0 + dCD_flap + k * cl * cl * ge
+	# Post-stall separation drag rises sharply.
+	if absf(alpha) > ALPHA_STALL:
+		cd += 0.9 * (absf(alpha) - ALPHA_STALL)
 
 	# --- Aerodynamic forces (wind axes -> world) -------------------------
 	var lift_force := Vector3.ZERO
@@ -220,6 +272,15 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	var total_force := lift_force + drag_force + side_force + thrust_force
 	total_force += Vector3.DOWN * (mass * Atmosphere.G0)  # gravity (manual integrator)
 
+	# --- Propwash over the tail -------------------------------------------
+	# Momentum theory: the far-wake slipstream raises dynamic pressure behind
+	# the prop, so the elevator and rudder keep authority at low airspeed —
+	# this is why a real 172 can rotate at 55 KIAS and hold the nose in a
+	# full-power climb.
+	var wash_sq := airspeed * airspeed \
+		+ TAIL_WASH_FRACTION * 2.0 * thrust_mag / (rho * PROP_DISC_AREA)
+	var q_tail := 0.5 * rho * wash_sq
+
 	# --- Aerodynamic moments ---------------------------------------------
 	# Non-dimensional body rates.
 	# In Godot's body frame the roll axis is z (longitudinal), the pitch axis
@@ -233,33 +294,79 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	var qhat := q * MEAN_CHORD / two_v
 	var rhat := r * WING_SPAN / two_v
 
-	var cm := CM0 + dCM_flap + CM_ALPHA * alpha + CM_Q * qhat \
-		+ CM_ELEVATOR * (elevator + elevator_trim)
-	var cl_roll := CL_BETA * beta + CL_P * phat + CL_AILERON * aileron
-	var cn := CN_BETA * beta + CN_R * rhat + CN_RUDDER * rudder
+	# Ailerons lose bite as the wing approaches the stall (separated flow).
+	var stall_margin := absf(alpha) - (ALPHA_STALL - 0.035)
+	var ail_eff := 1.0
+	if stall_margin > 0.0:
+		ail_eff = clampf(1.0 - stall_margin / 0.12, 0.35, 1.0)
 
-	var pitch_moment := qbar * WING_AREA * MEAN_CHORD * cm   # about body x
-	var roll_moment := qbar * WING_AREA * WING_SPAN * cl_roll # about body z(fwd)
-	var yaw_moment := qbar * WING_AREA * WING_SPAN * cn       # about body y
+	# Wing-borne moments scale with freestream q; tail-borne moments (elevator,
+	# rudder, fin, pitch/yaw damping) scale with slipstream-washed q_tail.
+	var cm_wing := CM0 + dCM_flap + CM_ALPHA * alpha
+	var cm_tail := CM_Q * qhat + CM_ELEVATOR * (elevator + elevator_trim)
+	var cl_roll := CL_BETA * beta + CL_P * phat + CL_AILERON * aileron * ail_eff
+	var cn_tail := CN_BETA * beta + CN_R * rhat + CN_RUDDER * rudder
+
+	var pitch_moment := (qbar * cm_wing + q_tail * cm_tail) * WING_AREA * MEAN_CHORD
+	var roll_moment := qbar * WING_AREA * WING_SPAN * cl_roll   # about body z(fwd)
+	var yaw_moment := q_tail * WING_AREA * WING_SPAN * cn_tail  # about body y
+
+	# --- Left-turning tendencies (single-engine character) ----------------
+	# Spiral slipstream strikes the fin from the left (strongest slow + high
+	# power), P-factor at high alpha, and engine torque reaction. Positive
+	# yaw moment = nose LEFT, positive roll moment = roll LEFT in this frame.
+	var slip_w := clampf(1.0 - airspeed / 75.0, 0.15, 1.0)
+	yaw_moment += K_SLIPSTREAM_YAW * thrust_mag * slip_w
+	yaw_moment += K_PFACTOR * thrust_mag * maxf(alpha, 0.0)
+	roll_moment += K_TORQUE_ROLL * engine.torque_nm
+
+	# --- Pre-stall buffet ---------------------------------------------------
+	# Separated flow shakes the airframe just before and through the stall —
+	# the tactile warning a real wing gives.
+	if stall_margin > -0.01 and airspeed > 12.0:
+		_buffet_t += dt
+		var amp := BUFFET_AMPLITUDE * qbar * WING_AREA * MEAN_CHORD
+		pitch_moment += amp * sin(_buffet_t * 47.0)
+		roll_moment += amp * 1.6 * sin(_buffet_t * 31.0)
 
 	var torque_body := Vector3(pitch_moment, yaw_moment, roll_moment)
 	var torque_world := basis * torque_body
 
-	# --- Ground contact ---------------------------------------------------
+	# --- Ground contact: per-wheel springs + tire friction -----------------
 	var on_ground := false
-	if xform.origin.y < GEAR_HEIGHT + 0.05:
-		on_ground = true
-		var penetration := (GEAR_HEIGHT - xform.origin.y)
-		# Spring-damper normal force (only pushes up).
-		var normal_force := maxf(0.0, GEAR_STIFFNESS * penetration - GEAR_DAMPING * vel_world.y)
-		total_force += Vector3.UP * normal_force
-		# Tyre friction: rolling + braking resists ground-track velocity.
-		var horiz_vel := Vector3(vel_world.x, 0.0, vel_world.z)
-		if horiz_vel.length() > 0.05:
-			var mu := BRAKE_FRICTION if brakes_on else ROLLING_FRICTION
-			total_force += -horiz_vel.normalized() * (normal_force * mu)
-		# Keep the aircraft tracking roughly level on the ground.
-		torque_world += _ground_leveling_torque(basis, state.angular_velocity)
+	if xform.origin.y < GEAR_HEIGHT + 1.0:
+		var steer := (rudder / MAX_RUDDER) * NOSE_STEER_ANGLE
+		for i in range(WHEELS.size()):
+			var wp: Vector3 = xform * WHEELS[i]
+			if wp.y >= 0.0:
+				continue
+			on_ground = true
+			var arm := wp - xform.origin
+			var wheel_vel := state.linear_velocity + state.angular_velocity.cross(arm)
+			# Spring-damper normal force (only pushes up).
+			var n := maxf(0.0, WHEEL_STIFF[i] * (-wp.y) - WHEEL_DAMP[i] * wheel_vel.y)
+			var f := Vector3.UP * n
+			# Tire friction in the body frame: free-rolling fore-aft (brakes on
+			# the mains only), strong cornering grip sideways. The nosewheel's
+			# slip includes its steer angle, so rudder pedals steer at taxi
+			# speed and wash out naturally as the tail becomes effective.
+			var wb := basis.inverse() * Vector3(wheel_vel.x, 0.0, wheel_vel.z)
+			var v_fwd := -wb.z
+			var v_side := wb.x
+			if i == 0:
+				v_side -= v_fwd * steer
+			var f_long := 0.0
+			if absf(v_fwd) > 0.05:
+				var braking := brakes_on and (i == 1 or i == 2)  # mains only
+				var mu := BRAKE_FRICTION if braking else ROLLING_FRICTION
+				f_long = -signf(v_fwd) * mu * n
+			var f_side := -clampf(v_side * TIRE_CORNER_STIFF, -MU_SIDE, MU_SIDE) * n
+			f += basis * Vector3(f_side, 0.0, -f_long)
+			total_force += f
+			torque_world += arm.cross(f)
+		if on_ground:
+			# Mild scrub/shimmy damping in yaw.
+			torque_world += basis * Vector3(0.0, -1200.0 * r, 0.0)
 
 	# --- Integrate (manual) ----------------------------------------------
 	state.linear_velocity += (total_force / mass) * dt
@@ -274,6 +381,12 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	# Light angular damping for numerical stability of the rotational solver.
 	state.angular_velocity *= (1.0 - 0.03 * dt)
 
+	# True load factor: lift component along the body-up axis over weight.
+	if on_ground:
+		_load_factor = 1.0
+	else:
+		_load_factor = lift_force.dot(basis.y) / (mass * Atmosphere.G0)
+
 	_publish_flight_data(state, airspeed, alpha, beta, alt_m, cl, cl_max_eff, on_ground)
 
 
@@ -283,25 +396,12 @@ func _apply_stall(cl_linear: float, alpha: float, cl_max: float) -> float:
 	var a := absf(alpha)
 	if a <= ALPHA_STALL:
 		return clampf(cl_linear, -cl_max, cl_max)
-	# Past stall: fade lift down toward a low post-stall plateau.
+	# Past stall: lift breaks down toward a low post-stall plateau — quickly,
+	# so the break is a definite event rather than a mush.
 	# (a > ALPHA_STALL here, so alpha is non-zero and its sign is well-defined.)
-	var over := clampf((a - ALPHA_STALL) / 0.25, 0.0, 1.0)
-	var stalled_cl := lerpf(cl_max, 0.7, over)
+	var over := clampf((a - ALPHA_STALL) / 0.18, 0.0, 1.0)
+	var stalled_cl := lerpf(cl_max, 0.55, over)
 	return signf(alpha) * stalled_cl
-
-
-func _ground_leveling_torque(basis: Basis, ang_vel: Vector3) -> Vector3:
-	# Keeps the aircraft sitting upright on its gear (we model the ground as a
-	# single contact, so without this the body could tip over). We correct
-	# ROLL only — pitch stays free so the pilot can rotate for takeoff, and
-	# yaw is only lightly damped so the aircraft tracks straight on rollout.
-	var omega := basis.inverse() * ang_vel
-	# Roll error: positive when the right wing has dropped (see roll_deg).
-	var roll_err := asin(clampf(-basis.x.y, -1.0, 1.0))
-	var roll_correct := 30000.0 * roll_err - 6000.0 * omega.z  # about +z (roll)
-	var yaw_damp := -1500.0 * omega.y                          # about +y (yaw)
-	var torque_body := Vector3(0.0, yaw_damp, roll_correct)
-	return basis * torque_body
 
 
 func _publish_flight_data(state: PhysicsDirectBodyState3D, airspeed: float,
@@ -329,8 +429,8 @@ func _publish_flight_data(state: PhysicsDirectBodyState3D, airspeed: float,
 	FlightData.angle_of_attack_deg = rad_to_deg(alpha)
 	# Slip/skid from lateral acceleration component (inclinometer ball).
 	FlightData.slip_skid = clampf(beta * 2.5, -1.0, 1.0)
-	FlightData.load_factor = 1.0 / maxf(0.1, cos(deg_to_rad(FlightData.roll_deg))) \
-		if not on_ground else 1.0
+	# Real load factor from the integrated lift (smoothed for the readout).
+	FlightData.load_factor = lerpf(FlightData.load_factor, _load_factor, 0.2)
 
 	FlightData.engine_rpm = engine.rpm
 	FlightData.throttle_pct = engine.throttle * 100.0

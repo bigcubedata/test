@@ -34,7 +34,7 @@ albedo_color = Color(0.24, 0.40, 0.19, 1)
 roughness = 0.95
 
 [sub_resource type="BoxMesh" id="mesh_runway"]
-size = Vector3(45, 0.3, 1500)
+size = Vector3(45, 0.14, 1500)
 
 [sub_resource type="StandardMaterial3D" id="mat_asphalt"]
 albedo_color = Color(0.14, 0.14, 0.16, 1)
@@ -64,16 +64,16 @@ mesh = SubResource("mesh_ground")
 surface_material_override/0 = SubResource("mat_grass")
 
 [node name="Runway" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.15, -200)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, -200)
 mesh = SubResource("mesh_runway")
 surface_material_override/0 = SubResource("mat_asphalt")
 
 [node name="Threshold1" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, -930)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.14, -930)
 mesh = SubResource("mesh_marker")
 surface_material_override/0 = SubResource("mat_paint")
 
 [node name="Threshold2" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 530)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.14, 530)
 mesh = SubResource("mesh_marker")
 surface_material_override/0 = SubResource("mat_paint")

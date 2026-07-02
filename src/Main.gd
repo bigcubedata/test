@@ -7,6 +7,7 @@ extends Node3D
 
 func _ready() -> void:
 	# Spawn on the south end of the runway, lined up to depart to the north.
-	var spawn := Transform3D(Basis.IDENTITY, Vector3(0.0, 1.2, 480.0))
+	# Height is the gear's static equilibrium so it settles without a bounce.
+	var spawn := Transform3D(Basis.IDENTITY, Vector3(0.0, 1.12, 480.0))
 	aircraft.global_transform = spawn
 	aircraft.set_spawn(spawn, Vector3.ZERO)
