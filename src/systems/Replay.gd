@@ -32,6 +32,7 @@ const FIELDS := [
 	"engine_rpm", "manifold_pressure_inhg", "fuel_flow_gph", "oil_temp_c",
 	"throttle_pct", "flaps_deg", "flaps_setting", "on_ground",
 	"stall_warning", "pos_x", "pos_z", "fuel_pct", "volts",
+	"wind_dir_deg", "wind_speed_kt",
 ]
 # Fields that must be restored as bool / int rather than float.
 const BOOL_FIELDS := ["on_ground", "stall_warning"]

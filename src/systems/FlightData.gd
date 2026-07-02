@@ -47,6 +47,10 @@ var pos_z: float = 0.0   # world Z (north = -Z) [m]
 var fuel_pct: float = 0.85
 var volts: float = 24.0
 
+# --- Wind at the aircraft (for the PFD wind data box) ----------------------
+var wind_dir_deg: float = 0.0    # direction the wind blows FROM
+var wind_speed_kt: float = 0.0
+
 # --- V-speeds for the C172S (KIAS), used by the airspeed tape colour arcs -
 const VS0: float = 40.0    # stall, full flaps (bottom of white arc)
 const VS1: float = 48.0    # stall, clean (bottom of green arc)

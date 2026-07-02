@@ -22,6 +22,7 @@ func _ready() -> void:
 	_bind("reset_aircraft", [KEY_R])
 	_bind("replay_toggle", [KEY_TAB])
 	_bind("replay_pause", [KEY_SPACE])
+	_bind("cycle_wind", [KEY_V])
 
 
 func _bind(action: StringName, keys: Array) -> void:

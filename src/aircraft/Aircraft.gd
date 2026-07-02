@@ -210,7 +210,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	var alt_m: float = maxf(xform.origin.y, 0.0)
 	var rho := Atmosphere.density(alt_m)
 	var vel_world := state.linear_velocity
-	var wind := Vector3.ZERO  # (hook for future wind/turbulence)
+	var wind := Wind.sample(xform.origin)
 	var v_rel := vel_world - wind
 	var v_body := basis.inverse() * v_rel
 
@@ -319,6 +319,21 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	yaw_moment += K_SLIPSTREAM_YAW * thrust_mag * slip_w
 	yaw_moment += K_PFACTOR * thrust_mag * maxf(alpha, 0.0)
 	roll_moment += K_TORQUE_ROLL * engine.torque_nm
+
+	# --- Turbulence gradients ----------------------------------------------
+	# Sample the gust field at the wingtips and tail: a stronger updraft on
+	# one wing rolls the aircraft, a different gust at the tail pitches/yaws
+	# it — bumps come from the air, not from injected random torques.
+	if Wind.turbulence() > 0.01 and airspeed > 6.0:
+		var w_l := Wind.sample(xform.origin - basis.x * 4.5)
+		var w_r := Wind.sample(xform.origin + basis.x * 4.5)
+		var w_t := Wind.sample(xform.origin + basis.z * 4.0)
+		roll_moment += 0.12 * rho * airspeed * WING_AREA * WING_SPAN \
+			* (w_l - w_r).dot(basis.y)
+		pitch_moment += 0.6 * rho * airspeed * WING_AREA * MEAN_CHORD \
+			* (wind - w_t).dot(basis.y)
+		yaw_moment += 0.05 * rho * airspeed * WING_AREA * WING_SPAN \
+			* (wind - w_t).dot(basis.x)
 
 	# --- Pre-stall buffet ---------------------------------------------------
 	# Separated flow shakes the airframe just before and through the stall —

@@ -66,6 +66,7 @@ func _draw() -> void:
 	_draw_vsi(Rect2(s.x * 0.925 + 2, top, s.x * 0.07, tape_h))
 	# HSI kept clear of the very bottom edge so it isn't clipped on the panel.
 	_draw_hsi(Vector2(s.x * 0.5, s.y * 0.80), s.y * 0.135)
+	_draw_wind(s)
 	_draw_annunciations(s)
 
 
@@ -172,10 +173,10 @@ func _draw_airspeed(r: Rect2) -> void:
 				_text(Vector2(r.position.x + 6 * _u, y + 6 * _u), str(v), 16, C_WHITE)
 		v += 10
 
-	# Trend vector (magenta).
+	# Trend vector (magenta), clipped to the tape.
 	var pred := clampf(_trend * 6.0, -60.0, 60.0)
 	if absf(pred) > 1.0:
-		var ytip := cy - pred * _pk
+		var ytip := clampf(cy - pred * _pk, r.position.y + 4.0, r.position.y + r.size.y - 4.0)
 		draw_line(Vector2(cx - 3 * _u, cy), Vector2(cx - 3 * _u, ytip), C_MAG, maxf(2.0, 3.0 * _u), true)
 
 	_value_box(Rect2(r.position.x, cy - 19 * _u, r.size.x + 9 * _u, 38 * _u), 1, "%d" % roundi(ias), 24)
@@ -279,6 +280,32 @@ func _draw_hsi(c: Vector2, radius: float) -> void:
 	draw_rect(bx, C_BLACK)
 	draw_rect(bx, C_WHITE, false, maxf(1.0, 1.3 * _u))
 	_text_centered(Vector2(c.x, c.y - radius - 26 * _u), "%03d°" % roundi(hdg), 18, C_WHITE)
+
+
+# --------------------------------------------------------------------------
+#  Wind data box (G1000 option 2: relative arrow + direction/speed)
+# --------------------------------------------------------------------------
+func _draw_wind(s: Vector2) -> void:
+	var ox := s.x * 0.075
+	var oy := s.y * 0.715
+	_text(Vector2(ox, oy), "WIND", 13, C_CYAN)
+	var spd: float = FlightData.wind_speed_kt
+	if spd < 0.8:
+		_text(Vector2(ox, oy + 18 * _u), "CALM", 14, C_WHITE)
+		return
+	# Arrow shows where the wind blows TO, relative to the aircraft heading —
+	# an arrow from the left means wind from the left.
+	var rel := deg_to_rad(FlightData.wind_dir_deg + 180.0 - FlightData.heading_deg)
+	var c := Vector2(ox + 14 * _u, oy + 32 * _u)
+	var dir := Vector2(sin(rel), -cos(rel))
+	var arm := 12.0 * _u
+	draw_line(c - dir * arm, c + dir * arm, C_WHITE, maxf(1.5, 2.0 * _u), true)
+	var tip := c + dir * (arm + 5 * _u)
+	var side := Vector2(-dir.y, dir.x)
+	draw_colored_polygon(PackedVector2Array([
+		tip, c + dir * arm - side * 4.5 * _u, c + dir * arm + side * 4.5 * _u]), C_WHITE)
+	_text(Vector2(ox + 34 * _u, oy + 28 * _u), "%03d°" % roundi(FlightData.wind_dir_deg), 13, C_WHITE)
+	_text(Vector2(ox + 34 * _u, oy + 44 * _u), "%d KT" % roundi(spd), 13, C_WHITE)
 
 
 # --------------------------------------------------------------------------
