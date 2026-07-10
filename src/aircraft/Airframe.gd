@@ -1,15 +1,35 @@
 extends Node3D
-## Procedurally-built refined exterior for the C172.
+## Exterior model for the C172.
 ##
-## Instead of crude boxes, the fuselage is a smooth lofted body (elliptical
-## cross-sections from a rounded cabin to a tapered tail boom), the flight
-## surfaces are shaped planforms (taper, rounded tips, swept fin + dorsal),
-## and the aircraft has wing lift struts and faired fixed gear — the things
-## that read as "a Cessna". Built in code so no art assets are needed.
+## Preferred path: load the FlightGear c172p exterior (assets/models/c172.glb,
+## GPL-2.0 — see assets/models/LICENSE.md) at runtime via GLTFDocument. The
+## GLB carries the control surfaces, propeller, spinner and nose gear as
+## separate named nodes whose origins sit on the real hinge lines, so this
+## script can articulate them directly.
+##
+## Fallback path (GLB missing/unreadable): the original procedurally-built
+## exterior — a lofted fuselage, shaped planforms, struts and faired gear —
+## so the project still runs with zero external assets.
 ##
 ## Body frame: forward = -Z, up = +Y, right = +X.
 
 const SEG := 24  # cross-section resolution
+
+# ---- GLTF exterior (FlightGear c172p conversion) --------------------------
+const GLB_PATH := "res://assets/models/c172.glb"
+# Hinge axes in body frame, from the FlightGear animation definitions
+# (converted to Godot axes). Node origins already sit on the hinge lines.
+const AIL_L_AXIS := Vector3(0.9937, -0.0426, 0.1033)
+const AIL_R_AXIS := Vector3(0.9937, 0.0426, -0.1033)
+const RUD_AXIS := Vector3(-0.0082, 0.8294, 0.5586)
+const NOSE_AXIS := Vector3(0.0, -0.9579, -0.2870)   # raked steering axis
+const FLAP_TRAVEL := Vector3(0.0, -0.10, 0.08)      # Fowler-style slide at full flaps
+const PROP_BLUR_RPM := 900.0    # above this the textured blur disc takes over
+const VISUAL_MAX_RPS := 4.0     # capped visual prop rate (avoids strobing)
+
+var _gltf := false
+var _anim := {}                 # group name -> [{node, base}] (GLB mode)
+var _prop_angle := 0.0
 
 var _white: StandardMaterial3D
 var _blue: StandardMaterial3D
@@ -29,6 +49,8 @@ var _rud: Node3D
 
 func _ready() -> void:
 	_aircraft = get_parent()
+	if _load_gltf():
+		return
 	_white = _mat(Color(0.80, 0.81, 0.84), 0.55, 0.0)
 	_blue = _mat(Color(0.12, 0.34, 0.62), 0.4, 0.1)
 	# Windshield: nearly clear and non-metallic so you can see the runway
@@ -52,6 +74,9 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
+	if _gltf:
+		_animate_gltf(_delta)
+		return
 	# Animate control surfaces. Flaps track FlightData (so they replay too);
 	# ailerons/elevator/rudder track the live deflections on the Aircraft.
 	var fl := deg_to_rad(FlightData.flaps_deg)
@@ -68,6 +93,91 @@ func _process(_delta: float) -> void:
 		_elev.rotation.x = -_aircraft.elevator * 1.2
 	if _rud:
 		_rud.rotation.y = _aircraft.rudder * 1.3
+
+
+# --------------------------------------------------------------------------
+#  GLTF exterior (FlightGear c172p conversion)
+# --------------------------------------------------------------------------
+
+## Load the converted FlightGear model at runtime. GLTFDocument works both in
+## the editor and headless, and needs no import step. Returns false (-> the
+## procedural fallback is built instead) if the file is absent or unreadable.
+func _load_gltf() -> bool:
+	if not FileAccess.file_exists(GLB_PATH):
+		return false
+	var doc := GLTFDocument.new()
+	var state := GLTFState.new()
+	if doc.append_from_file(GLB_PATH, state) != OK:
+		push_warning("Airframe: failed to parse %s, using procedural model" % GLB_PATH)
+		return false
+	var model := doc.generate_scene(state)
+	if model == null:
+		push_warning("Airframe: failed to instance %s, using procedural model" % GLB_PATH)
+		return false
+	add_child(model)
+	# Collect the articulated nodes; converter emits them as Group, Group_1, …
+	# with identical origins, so every node in a group gets the same motion.
+	for group in ["Flaps", "AileronL", "AileronR", "Elevator", "Rudder",
+			"PropSlow", "PropFast", "Spinner", "NoseGear"]:
+		_anim[group] = []
+		_collect_group(model, group, _anim[group])
+	_gltf = true
+	# The GLB has its own propeller + blur disc; park the procedural one.
+	var prop := get_parent().get_node_or_null("Propeller")
+	if prop:
+		prop.visible = false
+		prop.set_process(false)
+	return true
+
+
+func _collect_group(root: Node, group: String, into: Array) -> void:
+	for child in root.get_children():
+		var n := child.name as String
+		if n == group or n.begins_with(group + "_"):
+			# Guard against prefix collisions (e.g. "Prop" vs "PropFast").
+			into.append({"node": child, "base": (child as Node3D).position})
+		_collect_group(child, group, into)
+
+
+func _set_group(group: String, basis: Basis, offset: Vector3 = Vector3.ZERO) -> void:
+	for e in _anim[group]:
+		e.node.transform = Transform3D(basis, e.base + offset)
+
+
+func _animate_gltf(delta: float) -> void:
+	# Flaps: the real 172's flaps run aft and down on tracks while rotating,
+	# so the slide (from the FlightGear animation) is applied with the hinge
+	# rotation. Driven from FlightData so they animate in replay too.
+	var fnorm: float = FlightData.flaps_deg / 30.0
+	_set_group("Flaps", Basis(Vector3.RIGHT, deg_to_rad(30.0) * fnorm), FLAP_TRAVEL * fnorm)
+
+	# Prop: spin at a capped visual rate; above ~900 rpm swap the geometric
+	# blades for the textured blur disc (both spin about the crank axis).
+	var rpm: float = FlightData.engine_rpm
+	_prop_angle = wrapf(_prop_angle + TAU * minf(rpm / 60.0, VISUAL_MAX_RPS) * delta, 0.0, TAU)
+	var spin := Basis(Vector3.BACK, _prop_angle)
+	_set_group("Spinner", spin)
+	_set_group("PropSlow", spin)
+	_set_group("PropFast", spin)
+	var blur := rpm > PROP_BLUR_RPM
+	for e in _anim["PropSlow"]:
+		e.node.visible = not blur
+	for e in _anim["PropFast"]:
+		e.node.visible = blur
+
+	if _aircraft == null:
+		return
+	# Control surfaces follow the live deflections (radians) on the Aircraft;
+	# signs match the procedural fallback (+X hinge rotation = trailing edge
+	# down, checked against the FlightGear animation definitions).
+	var ail: float = _aircraft.aileron
+	_set_group("AileronL", Basis(AIL_L_AXIS, ail))
+	_set_group("AileronR", Basis(AIL_R_AXIS, -ail))
+	_set_group("Elevator", Basis(Vector3.RIGHT, -_aircraft.elevator * 1.2))
+	_set_group("Rudder", Basis(RUD_AXIS, _aircraft.rudder * 1.3))
+	# Nose wheel mirrors the physics steer angle about the raked strut axis.
+	var steer: float = (_aircraft.rudder / _aircraft.MAX_RUDDER) * _aircraft.NOSE_STEER_ANGLE
+	_set_group("NoseGear", Basis(NOSE_AXIS, steer))
 
 
 # --------------------------------------------------------------------------

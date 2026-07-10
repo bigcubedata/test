@@ -37,9 +37,16 @@ one-key reset). Runs on **macOS**, Linux and Windows.
 - **Traffic-pattern instructor** — `src/training/PatternPilot.gd` flies a
   textbook left-hand pattern (takeoff → crosswind → downwind → base → final →
   full-stop landing) with bilingual lesson captions and camera direction.
-- **Procedural everything** — aircraft model, airport (runway markings,
-  taxiway, hangar, tower), countryside and all instruments are built in code;
-  no external assets.
+- **Detailed exterior model** — the aircraft exterior is the FlightGear
+  c172p project's model (`assets/models/c172.glb`, GPL-2.0 — see
+  `assets/models/LICENSE.md`), converted with full livery textures and
+  articulated flaps (they slide aft and down on their tracks), ailerons,
+  elevator, rudder, spinning propeller with a blur disc, and a nose wheel
+  that steers with the pedals. Delete the GLB and the sim falls back to the
+  original all-procedural model.
+- **Procedural world & instruments** — airport (runway markings, taxiway,
+  hangar, tower), countryside, cockpit panel and all instruments are built
+  in code.
 
 ---
 
@@ -124,6 +131,8 @@ pattern by itself, then remove the autoload to fly manually again.
 
 ```
 project.godot                 Engine config, input map, autoloads
+assets/
+  models/c172.glb             FlightGear c172p exterior (GPL-2.0, see LICENSE.md)
 src/
   Main.tscn / Main.gd         Top-level scene: world + aircraft + camera + UI
   systems/
@@ -137,7 +146,7 @@ src/
   aircraft/
     Aircraft.tscn/.gd         Flight dynamics, 3-point gear, propulsion coupling
     Engine.gd                 Lycoming IO-360 + fixed-pitch prop model
-    Airframe.gd               Procedural exterior (lofted fuselage, surfaces)
+    Airframe.gd               Exterior: GLB loader + procedural fallback
     Cockpit.gd                3D panel with live G1000 screens (SubViewports)
     Propeller.gd              Spinning prop + blur disc
     ReplayAnnotation.gd       Floating glide/AGL/G tag during replay
@@ -164,4 +173,7 @@ systems failures, and asymmetric stall/wing drop.
 
 ## License
 
-See [LICENSE](LICENSE).
+See [LICENSE](LICENSE). The exterior aircraft model
+(`assets/models/c172.glb`) is a converted copy of the
+[FlightGear c172p](https://github.com/c172p-team/c172p) model and remains
+under **GPL-2.0** — see [assets/models/LICENSE.md](assets/models/LICENSE.md).

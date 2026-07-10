@@ -67,21 +67,22 @@ const BUFFET_AMPLITUDE: float = 0.015   # pre-stall airframe buffet strength
 # --- Ground handling: three-point gear -------------------------------------
 # Each wheel is its own spring/damper contact with tire friction, so ground
 # attitude, rotation, braking pitch-down and steering all emerge from the
-# geometry instead of being scripted. Mains sit behind the CG (the nosewheel
-# carries ~8% of the weight, like the real aircraft).
-const GEAR_HEIGHT: float = 1.2      # wheel contact below CG [m]
-# Spring rates are matched to the static load split (nose ~15%, mains ~85%)
-# so an even-compression transient settles level instead of pitching; the
-# mains sit far enough behind the CG that gear forces can't tip it tail-down,
-# while the elevator can still rotate at ~55 KIAS once wing lift unloads them.
+# geometry instead of being scripted. Contact points sit exactly under the
+# tires of the exterior model (real 172 wheelbase ~1.64 m, nose carries ~27%
+# of the weight), so the visual tires meet the pavement.
+const GEAR_HEIGHT: float = 1.33     # main-wheel contact below CG [m]
+# Spring rates are matched to the static load split (nose ~27%, mains ~73%,
+# nose strut softer with more sag like the real oleo) so the aircraft settles
+# level; the mains sit far enough behind the CG that gear forces can't tip it
+# tail-down, while the elevator can still rotate at ~55 KIAS.
 const WHEELS := [
-	Vector3(0.0, -1.2, -2.0),       # nosewheel
-	Vector3(-1.05, -1.2, 0.45),     # left main
-	Vector3(1.05, -1.2, 0.45),      # right main
-	Vector3(0.0, -0.55, 3.3),       # tail tie-down skid (strike protection)
+	Vector3(0.0, -1.37, -1.19),     # nosewheel
+	Vector3(-1.11, -1.33, 0.45),    # left main
+	Vector3(1.11, -1.33, 0.45),     # right main
+	Vector3(0.0, -0.68, 4.62),      # tail tie-down skid (strike protection)
 ]
-const WHEEL_STIFF := [18000.0, 51000.0, 51000.0, 40000.0]
-const WHEEL_DAMP := [3000.0, 8000.0, 8000.0, 4000.0]
+const WHEEL_STIFF := [23000.0, 44000.0, 44000.0, 40000.0]
+const WHEEL_DAMP := [4000.0, 7000.0, 7000.0, 4000.0]
 const ROLLING_FRICTION: float = 0.03
 const BRAKE_FRICTION: float = 0.45
 const MU_SIDE: float = 0.75         # lateral tire grip (tires resist skidding)
