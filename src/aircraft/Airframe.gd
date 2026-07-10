@@ -48,6 +48,7 @@ func _ready() -> void:
 	_build_stripe()
 	_build_cowl_details()
 	_build_registration()
+	_build_details()
 
 
 func _process(_delta: float) -> void:
@@ -77,7 +78,7 @@ func _build_fuselage() -> void:
 	# Nose shortened to a true C172 cowl length (spinner ~-3.8); the long tail
 	# boom and tall cabin are kept for the right proportions.
 	var st := [
-		[-3.62, 0.07, 0.09, -0.06],   # cowl front (spinner backplate)
+		[-3.70, 0.10, 0.11, -0.05],   # cowl front, flush with the spinner base
 		[-3.35, 0.30, 0.28, -0.05],
 		[-2.95, 0.48, 0.44, -0.01],
 		[-2.55, 0.55, 0.58, 0.04],
@@ -114,40 +115,44 @@ func _build_wings() -> void:
 	# Planform in (span = u/X, chord = v/Z); thickness along Y. The trailing
 	# edge stops at v=0.70 — the last ~22% of chord is the separate flap and
 	# aileron surfaces built below, which animate.
+	# Root starts at the centreline (buried inside the hull) so there is no
+	# gap where the wing meets the curved cabin roof.
 	var prof := PackedVector2Array([
-		Vector2(0.45, -0.55), Vector2(3.9, -0.55), Vector2(5.05, -0.40),
+		Vector2(0.0, -0.55), Vector2(3.9, -0.55), Vector2(5.05, -0.40),
 		Vector2(5.30, 0.05), Vector2(5.05, 0.55), Vector2(3.9, 0.70),
-		Vector2(0.45, 0.70),
+		Vector2(0.0, 0.70),
 	])
 	var dih := 0.05  # dihedral (rad)
 	for sign in [1.0, -1.0]:
 		var m := _extrude(prof, Vector3(sign, 0, 0), Vector3(0, 0, 1), 0.17,
 			Vector3(0, 0, -1.55), _white)
 		m.rotation = Vector3(0, 0, dih * sign)  # tips up (dihedral)
-		m.position.y = 0.84                      # high wing, sitting on the cabin roof
-		# Blue tip cap.
+		m.position.y = 0.80                      # sunk onto the cabin roof
+		# Blue tip cap — same thickness as the wing so it doesn't form a lip.
 		var tip := PackedVector2Array([
 			Vector2(4.55, -0.42), Vector2(5.05, -0.40), Vector2(5.30, 0.05),
 			Vector2(5.05, 0.55), Vector2(4.55, 0.66)])
-		var tm := _extrude(tip, Vector3(sign, 0, 0), Vector3(0, 0, 1), 0.21,
+		var tm := _extrude(tip, Vector3(sign, 0, 0), Vector3(0, 0, 1), 0.175,
 			Vector3(0, 0, -1.55), _blue)
 		tm.rotation = Vector3(0, 0, dih * sign)
-		tm.position.y = 0.84
+		tm.position.y = 0.80
 
-		# Hinged trailing-edge surfaces (hinge line at z = -0.85).
+		# Hinged trailing-edge surfaces (hinge line at z = -0.85), tucked well
+		# under the trailing edge so no daylight shows at the hinge line.
 		var surf := _mat(Color(0.72, 0.73, 0.76), 0.5, 0.0)
-		var flap := _hinged_surface(Vector3(sign * 1.5, 0.84 + 0.05 * 1.5, -0.85),
-			Vector3(1.9, 0.05, 0.36), dih * sign, surf)
+		var flap := _hinged_surface(Vector3(sign * 1.5, 0.78 + 0.05 * 1.5, -0.85),
+			Vector3(1.9, 0.09, 0.40), dih * sign, surf)
 		_flaps.append(flap)
-		var ail := _hinged_surface(Vector3(sign * 3.7, 0.84 + 0.05 * 3.7, -0.85),
-			Vector3(2.1, 0.045, 0.32), dih * sign, surf)
+		var ail := _hinged_surface(Vector3(sign * 3.7, 0.78 + 0.05 * 3.7, -0.85),
+			Vector3(2.1, 0.08, 0.36), dih * sign, surf)
 		if sign > 0.0:
 			_ail_r = ail
 		else:
 			_ail_l = ail
 
 
-## A control surface hanging aft (+Z) of its hinge-line pivot.
+## A control surface hanging aft (+Z) of its hinge-line pivot, overlapping
+## the fixed surface by ~7 cm so the hinge never shows a gap when deflected.
 func _hinged_surface(pivot_pos: Vector3, sz: Vector3, roll: float,
 		mat: StandardMaterial3D) -> Node3D:
 	var pivot := Node3D.new()
@@ -159,7 +164,7 @@ func _hinged_surface(pivot_pos: Vector3, sz: Vector3, roll: float,
 	bm.size = sz
 	mi.mesh = bm
 	mi.material_override = mat
-	mi.position = Vector3(0, 0, sz.z * 0.5 - 0.02)
+	mi.position = Vector3(0, 0, sz.z * 0.5 - 0.07)
 	pivot.add_child(mi)
 	return pivot
 
@@ -208,11 +213,13 @@ func _build_tail() -> void:
 	_rud = Node3D.new()
 	_rud.position = Vector3(0, 0, 3.30)
 	add_child(_rud)
+	# Rudder profile starts 6 cm AHEAD of its hinge so it tucks into the fin
+	# (same thickness as the fin: no lip, no slot).
 	var rud_prof := PackedVector2Array([
-		Vector2(0.0, 0.30), Vector2(0.42, 0.36), Vector2(0.26, 1.44), Vector2(0.0, 1.45),
+		Vector2(-0.06, 0.31), Vector2(0.42, 0.36), Vector2(0.26, 1.44), Vector2(-0.06, 1.44),
 	])
 	var rud_mi := MeshInstance3D.new()
-	rud_mi.mesh = _extrude_mesh(rud_prof, Vector3(0, 0, 1), Vector3(0, 1, 0), 0.07)
+	rud_mi.mesh = _extrude_mesh(rud_prof, Vector3(0, 0, 1), Vector3(0, 1, 0), 0.08)
 	rud_mi.material_override = _blue
 	_rud.add_child(rud_mi)
 
@@ -228,10 +235,11 @@ func _build_tail() -> void:
 	add_child(_elev)
 	var ele_mi := MeshInstance3D.new()
 	var ele_bm := BoxMesh.new()
-	ele_bm.size = Vector3(3.05, 0.07, 0.30)
+	# Matches the stab's trailing-edge width/thickness; overlaps the hinge.
+	ele_bm.size = Vector3(3.0, 0.09, 0.34)
 	ele_mi.mesh = ele_bm
 	ele_mi.material_override = _white
-	ele_mi.position = Vector3(0, 0, 0.14)
+	ele_mi.position = Vector3(0, 0, 0.10)
 	_elev.add_child(ele_mi)
 
 
@@ -350,6 +358,36 @@ func _build_registration() -> void:
 		l.position = Vector3(s * 0.40, 0.16, 1.15)
 		l.rotation.y = s * (PI * 0.5 - 0.14)
 		add_child(l)
+
+
+func _build_details() -> void:
+	# Navigation lights: red left wingtip, green right, white on the tailcone.
+	var red := _unlit(Color(0.95, 0.1, 0.1))
+	var grn := _unlit(Color(0.1, 0.9, 0.2))
+	var wht := _unlit(Color(1.0, 1.0, 0.95))
+	_box(Vector3(0.05, 0.05, 0.09), Vector3(-5.28, 1.062, -1.93), red)
+	_box(Vector3(0.05, 0.05, 0.09), Vector3(5.28, 1.062, -1.93), grn)
+	_box(Vector3(0.05, 0.05, 0.05), Vector3(0.0, 0.24, 3.58), wht)
+
+	# Pitot tube under the left wing.
+	var metal := _mat(Color(0.6, 0.6, 0.62), 0.35, 0.7)
+	var pitot := _box(Vector3(0.025, 0.025, 0.30), Vector3(-2.1, 0.72, -2.05), metal)
+	pitot.rotation.x = 0.12
+	_box(Vector3(0.02, 0.10, 0.02), Vector3(-2.1, 0.78, -1.95), metal)
+
+	# Comm/nav blade antennas on the cabin roof and spine.
+	var ant := _mat(Color(0.85, 0.85, 0.87), 0.5, 0.1)
+	var a1 := _box(Vector3(0.02, 0.16, 0.22), Vector3(0.0, 0.86, 0.15), ant)
+	a1.rotation.x = -0.35
+	var a2 := _box(Vector3(0.02, 0.12, 0.18), Vector3(0.0, 0.55, 1.4), ant)
+	a2.rotation.x = -0.35
+
+
+func _unlit(c: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = c
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	return m
 
 
 func _box(sz: Vector3, pos: Vector3, mat: StandardMaterial3D) -> MeshInstance3D:

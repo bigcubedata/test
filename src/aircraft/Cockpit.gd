@@ -112,7 +112,7 @@ func _build_nose() -> void:
 		[-1.55, 0.52, 0.31, -0.52],
 		[-2.05, 0.48, 0.28, -0.53],
 		[-2.45, 0.40, 0.25, -0.48],
-		[-2.80, 0.24, 0.20, -0.36],  # blunt cowl face; spinner sits in front
+		[-2.68, 0.24, 0.20, -0.36],  # blunt cowl face, tucked behind the spinner
 	]
 	var rings: Array = []
 	for s in st:
