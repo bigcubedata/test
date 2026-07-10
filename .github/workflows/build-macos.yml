@@ -1,0 +1,65 @@
+name: Build macOS app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/goal-setting-sjhs9v]
+    paths:
+      - "src/**"
+      - "assets/**"
+      - "project.godot"
+      - "export_presets.cfg"
+      - ".github/workflows/build-macos.yml"
+
+env:
+  GODOT_VERSION: 4.3-stable
+  GODOT_RELEASE: "4.3.stable"
+
+jobs:
+  export-macos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot + export templates
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot-bin
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-macos-template
+
+      - name: Download Godot and macOS export template
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          mkdir -p ~/godot-bin
+          curl -sSL -o /tmp/godot.zip \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d ~/godot-bin
+          curl -sSL -o /tmp/templates.tpz \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_export_templates.tpz"
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_RELEASE}
+          unzip -q -j /tmp/templates.tpz templates/macos.zip \
+            -d ~/.local/share/godot/export_templates/${GODOT_RELEASE}
+
+      - name: Import project resources
+        run: |
+          ~/godot-bin/Godot_v${GODOT_VERSION}_linux.x86_64 --headless --path . --import 2>&1 | tail -5 || true
+
+      - name: Export macOS app (universal, ad-hoc signed)
+        run: |
+          set -o pipefail
+          mkdir -p dist
+          ~/godot-bin/Godot_v${GODOT_VERSION}_linux.x86_64 --headless --path . \
+            --export-release "macOS" dist/C172-FlightSim-macOS.zip 2>&1 | tee /tmp/export.log
+          test -s dist/C172-FlightSim-macOS.zip
+          ls -la dist/
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: C172-FlightSim-macOS
+          path: dist/C172-FlightSim-macOS.zip
+          if-no-files-found: error

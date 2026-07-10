@@ -30,6 +30,7 @@ const VISUAL_MAX_RPS := 4.0     # capped visual prop rate (avoids strobing)
 var _gltf := false
 var _anim := {}                 # group name -> [{node, base}] (GLB mode)
 var _prop_angle := 0.0
+var _proc_prop: Node3D          # procedural prop, kept for the cockpit view
 
 var _white: StandardMaterial3D
 var _blue: StandardMaterial3D
@@ -122,11 +123,11 @@ func _load_gltf() -> bool:
 		_anim[group] = []
 		_collect_group(model, group, _anim[group])
 	_gltf = true
-	# The GLB has its own propeller + blur disc; park the procedural one.
-	var prop := get_parent().get_node_or_null("Propeller")
-	if prop:
-		prop.visible = false
-		prop.set_process(false)
+	# The GLB carries its own propeller + blur disc for the external views.
+	# The procedural propeller stays alive for the cockpit eye-point, where
+	# the whole exterior model is hidden but the prop must still be seen
+	# through the windshield; _animate_gltf swaps them with our visibility.
+	_proc_prop = get_parent().get_node_or_null("Propeller")
 	return true
 
 
@@ -145,6 +146,11 @@ func _set_group(group: String, basis: Basis, offset: Vector3 = Vector3.ZERO) -> 
 
 
 func _animate_gltf(delta: float) -> void:
+	# Show the procedural prop exactly when the exterior model is hidden
+	# (cockpit view while flying); external and replay views use the GLB prop.
+	if _proc_prop and _proc_prop.visible == visible:
+		_proc_prop.visible = not visible
+
 	# Flaps: the real 172's flaps run aft and down on tracks while rotating,
 	# so the slide (from the FlightGear animation) is applied with the hinge
 	# rotation. Driven from FlightData so they animate in replay too.

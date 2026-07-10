@@ -47,6 +47,11 @@ one-key reset). Runs on **macOS**, Linux and Windows.
 - **Procedural world & instruments** — airport (runway markings, taxiway,
   hangar, tower), countryside, cockpit panel and all instruments are built
   in code.
+- **Procedural sound** — no audio files: the Lycoming's exhaust pulses (with
+  the classic idle lope), prop blade chop, airspeed-dependent wind rumble and
+  hiss, sideslip hiss, pre-stall buffet, the electric stall horn, flap-motor
+  whine, ground-roll rumble and touchdown thump are all synthesised live
+  from the flight state — so the sound matches the physics, even in replay.
 
 ---
 
@@ -57,6 +62,27 @@ one-key reset). Runs on **macOS**, Linux and Windows.
 - macOS 11+ (Apple Silicon or Intel), Linux, or Windows.
 
 ## Running on macOS
+
+### Option A — prebuilt app (no Godot needed)
+
+Every push builds a ready-to-run universal (Apple Silicon + Intel) app via
+GitHub Actions: open the repo's **Actions → Build macOS app → latest run →
+Artifacts** and download `C172-FlightSim-macOS`. Unzip it, drag the app to
+`/Applications`, then on first launch **right-click → Open** (the app is
+ad-hoc signed, not notarized, so Gatekeeper needs the explicit approval).
+If macOS still refuses, clear the download quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/C172 Flight Simulator.app"
+```
+
+You can also rebuild locally in one command (Godot + this repo):
+
+```bash
+godot --headless --path . --export-release "macOS" dist/C172-FlightSim-macOS.zip
+```
+
+### Option B — run from the Godot editor
 
 1. Install Godot 4 (drag `Godot.app` to `/Applications`).
    - If Gatekeeper blocks the first launch: right-click → **Open**, or allow it
