@@ -73,8 +73,10 @@ ad-hoc signed, not notarized, so Gatekeeper needs the explicit approval).
 If macOS still refuses, clear the download quarantine flag:
 
 ```bash
-xattr -dr com.apple.quarantine "/Applications/C172 Flight Simulator.app"
+xattr -dr com.apple.quarantine "/Applications/C172-FlightSim-macOS.app"
 ```
+
+(Adjust the name to whatever the app inside the zip is called.)
 
 You can also rebuild locally in one command (Godot + this repo):
 
