@@ -89,6 +89,20 @@ To export a standalone `.app`: **Project → Export → Add… → macOS**.
 | — speed             | `↑` / `↓` (0.25×–4×)                   |
 | — orbit camera      | drag **left mouse**, wheel to zoom     |
 
+### Joystick: Thrustmaster TCA Airbus (and others)
+
+Plug in before or after launch — devices are detected by name. With the
+**TCA Sidestick Airbus Edition**: stick = pitch/roll (expo curve), twist =
+rudder, the grey mini lever = throttle, trigger = wheel brakes, red button =
+cycle view, hat = trim (forward = nose-down) and flaps (left/right). With the
+**TCA Quadrant Airbus Edition**: the ENG levers drive the throttle absolutely
+(either lever or both), and lifting them into the **reverse range brakes the
+wheels**. Any other HID stick works the same way.
+
+Press **`J`** in-game for a live device monitor (axes/buttons). If your twist
+or levers land on different axis numbers, adjust the constants at the top of
+`src/systems/JoystickInput.gd` (`STICK_AXIS_*`, `QUAD_*`).
+
 ### Suggested first flight
 
 1. Full throttle (`=`), keep the centreline with gentle rudder (`Z`/`X`).

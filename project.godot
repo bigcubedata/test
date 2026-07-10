@@ -22,6 +22,7 @@ Wind="*res://src/systems/Wind.gd"
 AudioManager="*res://src/systems/AudioManager.gd"
 Replay="*res://src/systems/Replay.gd"
 InputSetup="*res://src/systems/InputSetup.gd"
+JoystickInput="*res://src/systems/JoystickInput.gd"
 
 [display]
 

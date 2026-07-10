@@ -160,19 +160,30 @@ func _process(_delta: float) -> void:
 func _read_input() -> void:
 	if control_override:
 		return
-	# Axis inputs (-1..1). Keyboard is digital, so ramp the commanded input
-	# toward the key state instead of snapping — the yoke moves like a hand is
-	# on it, not a switch — and re-centre a little faster than it deflects.
-	# Yoke convention: Up arrow pushes the nose DOWN, Down arrow pulls it UP.
 	var dt := get_process_delta_time()
-	input_pitch = _shape_axis(input_pitch, Input.get_axis("pitch_up", "pitch_down"), dt)
-	input_roll = _shape_axis(input_roll, Input.get_axis("roll_left", "roll_right"), dt)
-	input_yaw = _shape_axis(input_yaw, Input.get_axis("yaw_left", "yaw_right"), dt)
+	if JoystickInput.has_stick():
+		# Analog stick (e.g. TCA Sidestick): direct, curve-shaped input — no
+		# rate ramp, the hand on the stick IS the smoothing.
+		input_pitch = JoystickInput.pitch()
+		input_roll = JoystickInput.roll()
+		input_yaw = JoystickInput.yaw()
+	else:
+		# Keyboard is digital, so ramp the commanded input toward the key
+		# state instead of snapping — the yoke moves like a hand is on it,
+		# not a switch — and re-centre a little faster than it deflects.
+		# Yoke convention: Up arrow pushes the nose DOWN, Down arrow pulls it UP.
+		input_pitch = _shape_axis(input_pitch, Input.get_axis("pitch_up", "pitch_down"), dt)
+		input_roll = _shape_axis(input_roll, Input.get_axis("roll_left", "roll_right"), dt)
+		input_yaw = _shape_axis(input_yaw, Input.get_axis("yaw_left", "yaw_right"), dt)
 
-	if Input.is_action_pressed("throttle_up"):
-		engine.throttle = clampf(engine.throttle + 0.6 * get_process_delta_time(), 0.0, 1.0)
-	if Input.is_action_pressed("throttle_down"):
-		engine.throttle = clampf(engine.throttle - 0.6 * get_process_delta_time(), 0.0, 1.0)
+	if JoystickInput.has_throttle():
+		# Absolute lever (TCA Quadrant, or the sidestick's mini slider).
+		engine.throttle = JoystickInput.throttle()
+	else:
+		if Input.is_action_pressed("throttle_up"):
+			engine.throttle = clampf(engine.throttle + 0.6 * dt, 0.0, 1.0)
+		if Input.is_action_pressed("throttle_down"):
+			engine.throttle = clampf(engine.throttle - 0.6 * dt, 0.0, 1.0)
 
 	if Input.is_action_pressed("trim_up"):
 		elevator_trim = clampf(elevator_trim + TRIM_RATE * get_process_delta_time(), -0.3, 0.3)
@@ -186,7 +197,9 @@ func _read_input() -> void:
 
 	if Input.is_action_just_pressed("toggle_brakes"):
 		FlightData.parking_brake = not FlightData.parking_brake
-	brakes_on = FlightData.parking_brake
+	# Parking brake, plus momentary braking while the quadrant levers are
+	# lifted into the reverse range (a 172 has no reversers — repurposed).
+	brakes_on = FlightData.parking_brake or JoystickInput.reverse_braking()
 
 	if Input.is_action_just_pressed("reset_aircraft"):
 		reset()

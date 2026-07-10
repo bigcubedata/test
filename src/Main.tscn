@@ -61,7 +61,8 @@ offset_bottom = 180.0
 text = "CESSNA 172S G1000  —  cockpit view (C cycles to external; PFD/MFD show in corners)
 Pitch: Up/Down    Roll: Left/Right    Yaw: Z / X    Throttle: = / -  (W / S)
 Trim: , / .    Flaps: F / G    Brakes: B    View: C    Reset: R    Wind: V    Cockpit look: hold RMB
-Replay: Tab (enter/exit)   Space pause   Left/Right scrub   Up/Down speed   Orbit: drag LMB, wheel zoom"
+Replay: Tab (enter/exit)   Space pause   Left/Right scrub   Up/Down speed   Orbit: drag LMB, wheel zoom
+Joystick: TCA Airbus stick+quadrant supported — press J for the device monitor"
 theme_override_font_sizes/font_size = 15
 theme_override_colors/font_color = Color(1, 1, 1, 0.9)
 theme_override_colors/font_outline_color = Color(0, 0, 0, 0.8)
