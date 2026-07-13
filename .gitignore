@@ -49,3 +49,8 @@ data_*/
 /export/
 *.dmg
 *.app/
+
+# Textures extracted from assets/models/c172.glb by the Godot importer
+# (regenerated deterministically by `godot --headless --import`)
+assets/models/c172_*.png
+assets/models/c172_*.png.import

@@ -37,6 +37,7 @@ var stick_dev := -1
 var quad_dev := -1
 var _monitor: CanvasLayer
 var _monitor_label: Label
+var _rescan_t := 0.0
 
 
 func _ready() -> void:
@@ -118,6 +119,14 @@ func _curve(v: float, dz: float) -> float:
 #  Device monitor (J): live axis/button readout for verifying the mapping.
 # --------------------------------------------------------------------------
 func _process(_delta: float) -> void:
+	# Belt and braces: joy_connection_changed is not always delivered on every
+	# platform (macOS in particular), so while no device is mapped keep
+	# rescanning every couple of seconds.
+	if stick_dev < 0 and quad_dev < 0:
+		_rescan_t += _delta
+		if _rescan_t > 2.0:
+			_rescan_t = 0.0
+			_scan()
 	if Input.is_action_just_pressed("joy_debug"):
 		_toggle_monitor()
 	if _monitor and _monitor.visible:
@@ -146,7 +155,20 @@ func _toggle_monitor() -> void:
 func _monitor_text() -> String:
 	var pads := Input.get_connected_joypads()
 	if pads.is_empty():
-		return "JOYSTICK MONITOR (J to close)\n\nNo devices connected."
+		var msg := "JOYSTICK MONITOR (J to close)\n\nNo devices connected. (rescanning every 2 s)\n"
+		if OS.get_name() == "macOS":
+			msg += """
+macOS notes / macOS 排查:
+ 1. Unplug and replug the USB cable with this app running.
+    先启动本程序，再拔插一次 USB。
+ 2. System Settings -> Privacy & Security -> Input Monitoring:
+    allow this app, then restart it.
+    系统设置 -> 隐私与安全性 -> 输入监控: 允许本程序后重启。
+ 3. Generic HID sticks need a build exported with Godot 4.5+
+    (4.3/4.4 have a macOS controller-detection regression).
+    通用 HID 摇杆需要 Godot 4.5+ 导出的版本
+    (4.3/4.4 在 macOS 上有手柄检测回归)。"""
+		return msg
 	var out := "JOYSTICK MONITOR (J to close)  —  edit src/systems/JoystickInput.gd to remap\n"
 	for d in pads:
 		var role := "stick" if d == stick_dev else ("quadrant" if d == quad_dev else "unused")

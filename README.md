@@ -138,6 +138,18 @@ Press **`J`** in-game for a live device monitor (axes/buttons). If your twist
 or levers land on different axis numbers, adjust the constants at the top of
 `src/systems/JoystickInput.gd` (`STICK_AXIS_*`, `QUAD_*`).
 
+**Joystick not detected on macOS?** Three things to check:
+
+1. Use a build exported with **Godot 4.5 or newer** — Godot 4.3/4.4 have a
+   macOS regression where generic HID joysticks are not detected at all
+   ([godotengine/godot#102927](https://github.com/godotengine/godot/issues/102927)).
+   The CI-built app already uses 4.7. If you run from the editor, use a
+   Godot 4.5+ editor too.
+2. Unplug and replug the USB cable while the app is running (the game
+   rescans every 2 seconds).
+3. *System Settings → Privacy & Security → Input Monitoring*: allow the app,
+   then restart it.
+
 ### Suggested first flight
 
 1. Full throttle (`=`), keep the centreline with gentle rudder (`Z`/`X`).

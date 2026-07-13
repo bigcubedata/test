@@ -100,20 +100,29 @@ func _process(_delta: float) -> void:
 #  GLTF exterior (FlightGear c172p conversion)
 # --------------------------------------------------------------------------
 
-## Load the converted FlightGear model at runtime. GLTFDocument works both in
-## the editor and headless, and needs no import step. Returns false (-> the
-## procedural fallback is built instead) if the file is absent or unreadable.
+## Load the converted FlightGear model. Two paths, in order:
+##   1. The editor-imported scene (load()). This is the ONLY path that works
+##      in exported builds — the raw .glb is remapped to its imported scene
+##      in the PCK — and it's also what normal editor runs use. The .import
+##      sidecar tells us the import step has actually run.
+##   2. The raw file via GLTFDocument, for headless runs on a fresh checkout
+##      where nothing has been imported yet (CI physics regressions).
+## Returns false (-> the procedural fallback is built instead) if neither
+## path produces a model.
 func _load_gltf() -> bool:
-	if not FileAccess.file_exists(GLB_PATH):
-		return false
-	var doc := GLTFDocument.new()
-	var state := GLTFState.new()
-	if doc.append_from_file(GLB_PATH, state) != OK:
-		push_warning("Airframe: failed to parse %s, using procedural model" % GLB_PATH)
-		return false
-	var model := doc.generate_scene(state)
+	var model: Node3D = null
+	if FileAccess.file_exists(GLB_PATH + ".import"):
+		var packed := load(GLB_PATH)
+		if packed is PackedScene:
+			model = (packed as PackedScene).instantiate() as Node3D
+	if model == null and FileAccess.file_exists(GLB_PATH):
+		var doc := GLTFDocument.new()
+		var state := GLTFState.new()
+		if doc.append_from_file(GLB_PATH, state) == OK:
+			model = doc.generate_scene(state)
 	if model == null:
-		push_warning("Airframe: failed to instance %s, using procedural model" % GLB_PATH)
+		if FileAccess.file_exists(GLB_PATH) or FileAccess.file_exists(GLB_PATH + ".import"):
+			push_warning("Airframe: failed to load %s, using procedural model" % GLB_PATH)
 		return false
 	add_child(model)
 	# Collect the articulated nodes; converter emits them as Group, Group_1, …

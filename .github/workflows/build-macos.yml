@@ -11,9 +11,12 @@ on:
       - "export_presets.cfg"
       - ".github/workflows/build-macos.yml"
 
+# 4.5+ is required for the export: Godot 4.3/4.4 have a macOS regression
+# where generic HID joysticks (e.g. the Thrustmaster TCA set) are not
+# detected at all (godotengine/godot#102927, fixed in the 4.5 milestone).
 env:
-  GODOT_VERSION: 4.3-stable
-  GODOT_RELEASE: "4.3.stable"
+  GODOT_VERSION: 4.7-stable
+  GODOT_RELEASE: "4.7.stable"
 
 jobs:
   export-macos:
@@ -47,6 +50,15 @@ jobs:
       - name: Import project resources
         run: |
           ~/godot-bin/Godot_v${GODOT_VERSION}_linux.x86_64 --headless --path . --import 2>&1 | tail -5 || true
+
+      - name: Headless smoke test (script compatibility gate)
+        run: |
+          out=$(timeout 120 ~/godot-bin/Godot_v${GODOT_VERSION}_linux.x86_64 --headless --path . --quit-after 240 2>&1 || true)
+          echo "$out" | tail -20
+          if echo "$out" | grep -qE "SCRIPT ERROR|Parse Error"; then
+            echo "::error::GDScript errors under Godot ${GODOT_VERSION}"
+            exit 1
+          fi
 
       - name: Export macOS app (universal, ad-hoc signed)
         run: |
