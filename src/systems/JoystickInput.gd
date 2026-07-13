@@ -25,6 +25,25 @@ const YAW_DEADZONE := 0.10
 const EXPO := 1.6                  # response curve: fine near centre
 const INVERT_PITCH := false        # pull back = nose up already
 const USE_STICK_SLIDER := true     # mini lever as throttle w/o a quadrant
+const STICK_SLIDER_INVERT := true  # Thrustmaster HID: pushed forward = -1
+
+# Stick buttons -> actions, polled from the STICK device only. (These are
+# deliberately not InputMap binds: those fire for every device, and the TCA
+# Quadrant presses virtual buttons as its levers cross the detents.)
+const STICK_BTN_ACTIONS := {
+	JOY_BUTTON_A: &"toggle_brakes",           # trigger
+	JOY_BUTTON_B: &"toggle_view",             # red button
+	JOY_BUTTON_DPAD_UP: &"trim_down",         # hat forward = nose down
+	JOY_BUTTON_DPAD_DOWN: &"trim_up",
+	JOY_BUTTON_DPAD_LEFT: &"flaps_up",
+	JOY_BUTTON_DPAD_RIGHT: &"flaps_down",
+}
+
+# Device-name fragments (upper-case). Quadrant is matched FIRST: the TCA
+# Quadrant reports as "TCA Q-ENG 1&2", which would otherwise hit "TCA" in
+# the stick list. The sidestick reports as "T.A320 Pilot" on some OSes.
+const QUAD_NAMES: Array[String] = ["Q-ENG", "QUADRANT", "THROTTLE"]
+const STICK_NAMES: Array[String] = ["SIDESTICK", "TCA", "AIRBUS", "STICK", "T.16000", "A320", "PILOT"]
 
 # --- TCA Quadrant Airbus (two ENG levers) -----------------------------------
 const QUAD_AXIS_ENG1 := 0
@@ -38,6 +57,7 @@ var quad_dev := -1
 var _monitor: CanvasLayer
 var _monitor_label: Label
 var _rescan_t := 0.0
+var _btn_state := {}
 
 
 func _ready() -> void:
@@ -48,19 +68,42 @@ func _ready() -> void:
 func _scan() -> void:
 	stick_dev = -1
 	quad_dev = -1
+	var spare := -1
 	for d in Input.get_connected_joypads():
 		var n := Input.get_joy_name(d).to_upper()
-		if quad_dev < 0 and ("QUADRANT" in n or "THROTTLE" in n):
+		if quad_dev < 0 and _name_match(n, QUAD_NAMES):
 			quad_dev = d
-		elif stick_dev < 0 and ("SIDESTICK" in n or "TCA" in n or "AIRBUS" in n
-				or "STICK" in n or "T.16000" in n):
+		elif stick_dev < 0 and _name_match(n, STICK_NAMES):
 			stick_dev = d
-		elif stick_dev < 0:
-			stick_dev = d   # any other joypad: treat as the stick
+		elif spare < 0 and not _name_match(n, QUAD_NAMES):
+			spare = d       # any other joypad: candidate stick
+	if stick_dev < 0:
+		stick_dev = spare
 	if stick_dev >= 0 or quad_dev >= 0:
 		print("Joystick: stick=%s  quadrant=%s" % [
 			Input.get_joy_name(stick_dev) if stick_dev >= 0 else "-",
 			Input.get_joy_name(quad_dev) if quad_dev >= 0 else "-"])
+
+
+func _name_match(name_upper: String, fragments: Array[String]) -> bool:
+	for f in fragments:
+		if f in name_upper:
+			return true
+	return false
+
+
+## Edge-detect the stick's buttons and inject the mapped actions, so only
+## the STICK device can trigger them (see STICK_BTN_ACTIONS).
+func _poll_stick_buttons() -> void:
+	for b in STICK_BTN_ACTIONS:
+		var pressed := stick_dev >= 0 and Input.is_joy_button_pressed(stick_dev, b)
+		if pressed == _btn_state.get(b, false):
+			continue
+		_btn_state[b] = pressed
+		var ev := InputEventAction.new()
+		ev.action = STICK_BTN_ACTIONS[b]
+		ev.pressed = pressed
+		Input.parse_input_event(ev)
 
 
 func has_stick() -> bool:
@@ -105,7 +148,8 @@ func _lever() -> float:
 		var b := Input.get_joy_axis(quad_dev, QUAD_AXIS_ENG2)
 		var v := (a + b) * 0.5
 		return -v if QUAD_INVERT else v
-	return Input.get_joy_axis(stick_dev, STICK_AXIS_THROTTLE)
+	var s := Input.get_joy_axis(stick_dev, STICK_AXIS_THROTTLE)
+	return -s if STICK_SLIDER_INVERT else s
 
 
 func _curve(v: float, dz: float) -> float:
@@ -127,6 +171,7 @@ func _process(_delta: float) -> void:
 		if _rescan_t > 2.0:
 			_rescan_t = 0.0
 			_scan()
+	_poll_stick_buttons()
 	if Input.is_action_just_pressed("joy_debug"):
 		_toggle_monitor()
 	if _monitor and _monitor.visible:
@@ -184,4 +229,6 @@ macOS notes / macOS 排查:
 		out += "\nmapped: roll %+.2f  pitch %+.2f  yaw %+.2f  throttle %d%%%s" % [
 			roll(), pitch(), yaw(), roundi(throttle() * 100.0),
 			"  [REVERSE=BRAKE]" if reverse_braking() else ""]
+	out += "\ncheck: full-forward lever should read throttle 100% — if reversed,"
+	out += "\nflip QUAD_INVERT (quadrant) or STICK_SLIDER_INVERT (stick slider)."
 	return out

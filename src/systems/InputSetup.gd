@@ -28,12 +28,11 @@ func _ready() -> void:
 	# Joystick buttons (TCA Sidestick Airbus defaults; verify with J):
 	# trigger = wheel brakes, red button = cycle view, hat = trim + flaps
 	# (hat forward = nose-down trim, like a real trim switch).
-	_bind_joy("toggle_brakes", [JOY_BUTTON_A])            # button 0: trigger
-	_bind_joy("toggle_view", [JOY_BUTTON_B])              # button 1: red button
-	_bind_joy("trim_down", [JOY_BUTTON_DPAD_UP])
-	_bind_joy("trim_up", [JOY_BUTTON_DPAD_DOWN])
-	_bind_joy("flaps_up", [JOY_BUTTON_DPAD_LEFT])
-	_bind_joy("flaps_down", [JOY_BUTTON_DPAD_RIGHT])
+	# NOTE: joypad buttons are intentionally NOT bound here. InputMap events
+	# apply to every connected device, and the TCA Quadrant's levers press
+	# *virtual buttons* as they cross the detents — with device-blind binds,
+	# moving a throttle lever toggled trim/flaps/views. JoystickInput polls
+	# the buttons of the STICK device only and injects the actions itself.
 
 
 func _bind(action: StringName, keys: Array) -> void:
@@ -43,13 +42,4 @@ func _bind(action: StringName, keys: Array) -> void:
 	for k in keys:
 		var e := InputEventKey.new()
 		e.physical_keycode = k
-		InputMap.action_add_event(action, e)
-
-
-## Append joypad button events to an existing action (any device).
-func _bind_joy(action: StringName, buttons: Array) -> void:
-	for b in buttons:
-		var e := InputEventJoypadButton.new()
-		e.button_index = b
-		e.device = -1
 		InputMap.action_add_event(action, e)

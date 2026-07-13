@@ -134,9 +134,14 @@ cycle view, hat = trim (forward = nose-down) and flaps (left/right). With the
 (either lever or both), and lifting them into the **reverse range brakes the
 wheels**. Any other HID stick works the same way.
 
-Press **`J`** in-game for a live device monitor (axes/buttons). If your twist
-or levers land on different axis numbers, adjust the constants at the top of
-`src/systems/JoystickInput.gd` (`STICK_AXIS_*`, `QUAD_*`).
+Press **`J`** in-game for a live device monitor (axes/buttons). Verify there
+that pushing a lever full forward reads **throttle 100%** — axis numbering
+and direction differ between OSes/drivers. If something is off, adjust the
+constants at the top of `src/systems/JoystickInput.gd`: `STICK_AXIS_*` /
+`QUAD_AXIS_*` for indices, `QUAD_INVERT` / `STICK_SLIDER_INVERT` for
+direction, `QUAD_IDLE` / `QUAD_REV_BRAKE` for the detent positions.
+(The quadrant's levers also press *virtual buttons* at the detents; only the
+stick's buttons are mapped to actions, so the levers can't toggle anything.)
 
 **Joystick not detected on macOS?**
 
