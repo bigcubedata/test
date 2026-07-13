@@ -138,7 +138,20 @@ Press **`J`** in-game for a live device monitor (axes/buttons). If your twist
 or levers land on different axis numbers, adjust the constants at the top of
 `src/systems/JoystickInput.gd` (`STICK_AXIS_*`, `QUAD_*`).
 
-**Joystick not detected on macOS?** Three things to check:
+**Joystick not detected on macOS?**
+
+First make sure **macOS itself** sees the device: *System Information → USB*
+(or `system_profiler SPUSBDataType`). If the stick is not listed there, the
+problem is below the app:
+
+- On Apple Silicon laptops check *System Settings → Privacy & Security →
+  Allow accessories to connect* — new USB accessories must be approved
+  (set "Ask for new accessories", replug while unlocked, accept the prompt).
+- Plug directly into the machine with a known-good USB-A adapter/cable —
+  skip unpowered hubs and charge-only cables; try the other USB-C port.
+- Verify the hardware on another computer if possible.
+
+Once the device shows up at the USB level, three things in the app:
 
 1. Use a build exported with **Godot 4.5 or newer** — Godot 4.3/4.4 have a
    macOS regression where generic HID joysticks are not detected at all
