@@ -1,5 +1,8 @@
 /* 《君子之盾》 3D — Three.js 渲染层 + 已验证的玩法逻辑 */
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { clone as skClone } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { MODELS_B64 } from './assets/models.js';
 
 /* ================= 基础 ================= */
 const $=s=>document.querySelector(s);
@@ -207,126 +210,130 @@ const M={
   gold:new THREE.MeshStandardMaterial({color:0xC9A227,metalness:.8,roughness:.35}),
 };
 
-/* ================= 骑士人偶 ================= */
-function buildKnight(surcoatHex,shieldHex){
-  const surcoat=new THREE.MeshStandardMaterial({color:surcoatHex,roughness:.85,emissive:0x000000});
-  const root=new THREE.Group();
-  const parts={surcoat};
-  const cast=m=>{ m.castShadow=true; return m; };
-  /* 腿 */
-  const legG=[];
-  for(const side of [-1,1]){
-    const g=new THREE.Group(); g.position.set(0,0.92,side*0.11);
-    const thigh=cast(new THREE.Mesh(new THREE.CapsuleGeometry(.07,.36,4,8),M.armorDark));
-    thigh.position.y=-0.22; g.add(thigh);
-    const shin=cast(new THREE.Mesh(new THREE.CapsuleGeometry(.06,.34,4,8),M.armorDark));
-    shin.position.y=-0.62; g.add(shin);
-    const boot=cast(new THREE.Mesh(new THREE.BoxGeometry(.24,.09,.11),M.leather));
-    boot.position.set(.05,-0.86,0); g.add(boot);
-    root.add(g); legG.push(g);
-  }
-  parts.legL=legG[0]; parts.legR=legG[1];
-  /* 躯干 */
-  const torsoG=new THREE.Group(); torsoG.position.y=0.92; root.add(torsoG);
-  parts.torso=torsoG;
-  const chest=cast(new THREE.Mesh(new THREE.CapsuleGeometry(.19,.34,4,12),surcoat));
-  chest.position.y=0.28; torsoG.add(chest);
-  const belt=cast(new THREE.Mesh(new THREE.CylinderGeometry(.2,.2,.06,12),M.leather));
-  belt.position.y=0.06; torsoG.add(belt);
-  const skirt=cast(new THREE.Mesh(new THREE.CylinderGeometry(.2,.27,.34,12),surcoat));
-  skirt.position.y=-0.12; torsoG.add(skirt);
-  /* 肩甲 */
-  for(const side of [-1,1]){
-    const p=cast(new THREE.Mesh(new THREE.SphereGeometry(.1,10,8),M.armor));
-    p.position.set(0,0.5,side*0.24); torsoG.add(p);
-  }
-  /* 头盔 */
-  const headG=new THREE.Group(); headG.position.y=0.62; torsoG.add(headG);
-  parts.head=headG;
-  const helm=cast(new THREE.Mesh(new THREE.CylinderGeometry(.105,.115,.24,12),M.armor));
-  helm.position.y=0.1; headG.add(helm);
-  const helmTop=cast(new THREE.Mesh(new THREE.SphereGeometry(.105,12,8,0,Math.PI*2,0,Math.PI/2),M.armor));
-  helmTop.position.y=0.22; headG.add(helmTop);
-  const visor=new THREE.Mesh(new THREE.BoxGeometry(.02,.025,.14),new THREE.MeshStandardMaterial({color:0x0a0a0a,roughness:.6}));
-  visor.position.set(.105,0.13,0); headG.add(visor);
-  const plume=cast(new THREE.Mesh(new THREE.ConeGeometry(.03,.22,8),new THREE.MeshStandardMaterial({color:shieldHex,roughness:.8})));
-  plume.position.y=0.4; headG.add(plume);
-  /* 剑臂（近镜头侧 z+） */
-  const armR=new THREE.Group(); armR.position.set(0,1.42,0.26); torsoG.add(armR);
-  armR.position.set(0,0.5,0.26); /* torsoG 局部 */
-  parts.armR=armR;
-  const upper=cast(new THREE.Mesh(new THREE.CapsuleGeometry(.055,.3,4,8),surcoat));
-  upper.position.y=-0.18; armR.add(upper);
-  const glove=cast(new THREE.Mesh(new THREE.SphereGeometry(.06,8,8),M.leather));
-  glove.position.y=-0.4; armR.add(glove);
-  const swordG=new THREE.Group(); swordG.position.y=-0.4; armR.add(swordG);
-  parts.sword=swordG;
-  const blade=cast(new THREE.Mesh(new THREE.BoxGeometry(.045,.92,.012),M.blade));
-  blade.position.y=0.55; swordG.add(blade);
-  const tip=cast(new THREE.Mesh(new THREE.ConeGeometry(.024,.1,4),M.blade));
-  tip.position.y=1.05; tip.rotation.y=Math.PI/4; swordG.add(tip);
-  const guard=cast(new THREE.Mesh(new THREE.BoxGeometry(.2,.03,.03),M.gold));
-  guard.position.y=0.09; swordG.add(guard);
-  const grip=cast(new THREE.Mesh(new THREE.CylinderGeometry(.025,.025,.16,8),M.leather));
-  swordG.add(grip);
-  const pommel=cast(new THREE.Mesh(new THREE.SphereGeometry(.035,8,8),M.gold));
-  pommel.position.y=-0.09; swordG.add(pommel);
-  /* 盾臂（远镜头侧 z-） */
-  const armL=new THREE.Group(); armL.position.set(0,0.5,-0.26); torsoG.add(armL);
-  parts.armL=armL;
-  const upperL=cast(new THREE.Mesh(new THREE.CapsuleGeometry(.055,.3,4,8),surcoat));
-  upperL.position.y=-0.18; armL.add(upperL);
-  /* 熨斗盾 */
-  const shp=new THREE.Shape();
-  shp.moveTo(-.24,.3); shp.quadraticCurveTo(0,.36,.24,.3);
-  shp.quadraticCurveTo(.26,-.1,0,-.34); shp.quadraticCurveTo(-.26,-.1,-.24,.3);
-  const shieldGeo=new THREE.ExtrudeGeometry(shp,{depth:.035,bevelEnabled:true,bevelSize:.015,bevelThickness:.01,bevelSegments:2});
-  const shieldMat=new THREE.MeshStandardMaterial({color:shieldHex,roughness:.6,metalness:.15});
-  const shield=cast(new THREE.Mesh(shieldGeo,shieldMat));
-  shield.rotation.y=Math.PI/2;
-  shield.position.set(.16,-0.3,.02); armL.add(shield);
-  const boss=cast(new THREE.Mesh(new THREE.SphereGeometry(.05,10,8),M.gold));
-  boss.position.set(.21,-0.32,.02); armL.add(boss);
-  armL.rotation.z=-0.25;
-  root.traverse(o=>{ if(o.isMesh) o.receiveShadow=true; });
-  return {root,parts};
+/* ================= 骨骼模型加载（KayKit Adventurers, CC0） ================= */
+const GLTFS={};            /* key -> {scene, animations} */
+let modelsReady=false;
+function b64buf(b64){
+  const bin=atob(b64), a=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i);
+  return a.buffer;
 }
-/* 架势→[臂,剑]（向前为正） */
-const STANCE_POSE=[[0.30,0.02],[0.62,0.62],[0.5,1.6]];
-function poseKnight(rig,f,dt,t){
-  const P=rig.parts;
-  const sp=STANCE_POSE[f.stance];
-  let arm=sp[0], sword=sp[1], torso=0, y=0, headZ=0, shieldZ=-0.25, legSpread=0;
-  switch(f.state){
-    case 'windup': arm=-0.6; sword=sp[1]+0.5; torso=-0.14; shieldZ=-0.05; break;
-    case 'strike': arm=1.75; sword=0.1; torso=0.2; break;
-    case 'recover': arm=sp[0]+0.3; sword=sp[1]+0.1; break;
-    case 'stagger': torso=-0.42; arm=sp[0]-0.35; legSpread=0.25; break;
-    case 'yield': arm=0.95; sword=1.95; torso=0.3; y=-0.36; headZ=0.4; legSpread=0.45; break;
+function loadModels(){
+  const loader=new GLTFLoader();
+  return Promise.all(Object.entries(MODELS_B64).map(([key,b64])=>
+    new Promise((res,rej)=>loader.parse(b64buf(b64),'',g=>{GLTFS[key]=g;res();},rej))
+  )).then(()=>{ modelsReady=true; });
+}
+/* 各模型的可挂配件全集（用于显隐控制） */
+const ATTACH={
+  knight:['1H_Sword','2H_Sword','1H_Sword_Offhand','Badge_Shield','Rectangle_Shield','Round_Shield','Spike_Shield','Knight_Helmet','Knight_Cape'],
+  rogue:['Knife','Knife_Offhand','1H_Crossbow','2H_Crossbow','Rogue_Cape','Rogue_Head_Hooded'],
+  barbarian:['1H_Axe','2H_Axe','1H_Axe_Offhand','Barbarian_Round_Shield','Barbarian_Hat','Barbarian_Cape'],
+};
+const ATKS=['1H_Melee_Attack_Chop','1H_Melee_Attack_Slice_Horizontal','1H_Melee_Attack_Stab'];
+class Actor{
+  constructor(modelKey,{tint,show,scale=1}={}){
+    const g=GLTFS[modelKey];
+    this.root=new THREE.Group();
+    this.model=skClone(g.scene);
+    this.mats=[];
+    this.model.traverse(o=>{
+      if(o.isMesh||o.isSkinnedMesh){
+        o.castShadow=true; o.receiveShadow=true;
+        o.material=o.material.clone();
+        if(tint) o.material.color.multiply(new THREE.Color(tint));
+        this.mats.push(o.material);
+      }
+    });
+    if(show){
+      for(const nm of ATTACH[modelKey]){
+        const n=this.model.getObjectByName(nm);
+        if(n) n.visible=show.includes(nm);
+      }
+    }
+    /* 统一身高约 1.85 */
+    const bb=new THREE.Box3().setFromObject(this.model);
+    const h=bb.max.y-bb.min.y;
+    const s=(1.85/h)*scale;
+    this.model.scale.setScalar(s);
+    this.model.position.y=-bb.min.y*s;
+    this.root.add(this.model);
+    this.mixer=new THREE.AnimationMixer(this.model);
+    this.actions={};
+    for(const clip of g.animations) this.actions[clip.name]=this.mixer.clipAction(clip);
+    this.key=null; this.cur=null;
+    this.armBone=this.model.getObjectByName('upperarm.r');
+    this.mixer.addEventListener('finished',()=>{
+      if(['hitreact','blockreact','stagger','swing0','swing1','swing2'].includes(this.key)) this.key=null;
+    });
   }
-  if(f.exhaust>0){ torso=Math.max(torso,0.3); arm=Math.min(arm,0.25); headZ=0.25; }
-  if(f.phaseSalute){ arm=0.62; sword=-0.45; torso=0; }
-  if(f.blockFlash>0){ shieldZ=0.15; }
-  const k=lerpK(dt, f.state==='strike'?30:12);
-  P.armR.rotation.z+=(-arm-P.armR.rotation.z)*k;
-  P.sword.rotation.z+=(-sword-P.sword.rotation.z)*k;
-  P.torso.rotation.z+=(-torso-P.torso.rotation.z)*k;
-  P.head.rotation.z+=(-headZ-P.head.rotation.z)*k;
-  P.armL.rotation.z+=(shieldZ-P.armL.rotation.z)*k;
-  P.legR.rotation.z+=(-legSpread-P.legR.rotation.z)*k;
-  rig.root.position.y+=(y-rig.root.position.y)*k;
-  /* 移动小步伐 */
+  play(name,{loop=true,clamp=false,fade=0.14,timeScale=1,from=0}={}){
+    const a=this.actions[name];
+    if(!a) return null;
+    a.reset();
+    a.setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce, Infinity);
+    a.clampWhenFinished=clamp;
+    a.timeScale=timeScale;
+    a.time=from;
+    a.enabled=true;
+    if(this.cur&&this.cur!==a){ a.crossFadeFrom(this.cur,fade,false); }
+    a.play();
+    this.cur=a;
+    return a;
+  }
+  setEmissive(v){
+    const i=Math.min(v*0.45,0.32);
+    for(const m of this.mats){ if(m.emissive){ m.emissive.setRGB(.5,.04,0); m.emissiveIntensity=i; } }
+  }
+}
+/* 决斗状态 → 动画 */
+function syncActor(actor,f,dt){
   const moving=Math.abs(f.vx||0)>1;
-  if(moving && f.state==='idle'){
-    P.legL.rotation.z=Math.sin(t*9)*0.3; P.legR.rotation.z=-Math.sin(t*9)*0.3;
-  } else if(f.state!=='yield'&&f.state!=='stagger'){
-    P.legL.rotation.z+= (0-P.legL.rotation.z)*k;
+  let key;
+  if(f.phaseSalute) key='salute';
+  else if(f.state==='yield') key='yield';
+  else if(f.state==='windup') key='windup'+f.strikeStance;
+  else if(f.state==='strike'||f.state==='recover') key='swing'+f.strikeStance;
+  else if(f.state==='stagger') key='stagger';
+  else if(f.exhaust>0) key='exhaust';
+  else if(moving) key=(f.vx*f.face>0)?'walk':'back';
+  else key='guard';
+  if(f._hitPulse){ f._hitPulse=false; key='hitreact'; actor.key=null; }
+  if(f._blockPulse){ f._blockPulse=false; key='blockreact'; actor.key=null; }
+  if(key!==actor.key){
+    const prev=actor.key;
+    actor.key=key;
+    if(key==='salute') actor.play('Cheer',{loop:false,clamp:true,timeScale:.9});
+    else if(key==='yield') actor.play('Sit_Floor_Down',{loop:false,clamp:true,timeScale:.85});
+    else if(key.startsWith('windup')){
+      const clip=ATKS[f.strikeStance];
+      const a=actor.play(clip,{loop:false,clamp:true,fade:.08});
+      if(a){
+        const dur=a.getClip().duration;
+        const windup=Math.max(f.t>0?f.t:0.36,0.08);
+        a.timeScale=(dur*0.3)/windup;      /* 起手段缓慢抬剑 */
+      }
+    }
+    else if(key.startsWith('swing')){
+      const a=actor.actions[ATKS[f.strikeStance]];
+      if(a&&(prev||'').startsWith('windup')){ a.timeScale=2.8; }  /* 挥击段爆发 */
+      else if(a){ actor.play(ATKS[f.strikeStance],{loop:false,clamp:true,timeScale:2.8,from:a.getClip().duration*0.3}); }
+    }
+    else if(key==='stagger') actor.play('Hit_B',{loop:false,clamp:true,fade:.06});
+    else if(key==='hitreact') actor.play('Hit_A',{loop:false,fade:.05,timeScale:1.7});
+    else if(key==='blockreact') actor.play('Block_Hit',{loop:false,fade:.05,timeScale:1.4});
+    else if(key==='exhaust') actor.play('Idle',{timeScale:.4});
+    else if(key==='walk') actor.play('Walking_A',{timeScale:1.35});
+    else if(key==='back') actor.play('Walking_Backwards',{timeScale:1.25});
+    else actor.play('Blocking');
   }
-  /* 受击闪红 */
-  rig.parts.surcoat.emissive.setRGB(f.hurtFlash>0?0.5:0,0,0);
-  rig.parts.surcoat.emissiveIntensity=f.hurtFlash>0?Math.max(0,f.hurtFlash*2):0;
+  actor.mixer.update(dt);
+  /* 守势时以持剑臂高低区分三段架势（骨骼后处理） */
+  if((key==='guard'||key==='walk'||key==='back')&&actor.armBone){
+    actor.armBone.rotation.x+=[-0.55,0,0.5][f.stance];
+  }
+  actor.setEmissive(f.hurtFlash>0?Math.max(0,f.hurtFlash*2):0);
 }
-
 /* ================= 马与骑者（行游） ================= */
 function buildHorse(){
   const root=new THREE.Group();
@@ -353,23 +360,24 @@ function buildHorse(){
     leg.position.y=-0.37; g.add(leg);
     root.add(g); legs.push(g);
   }
-  /* 鞍与骑者 */
+  /* 鞍与旧程序化骑者（骨骼模型就绪后替换） */
   const saddle=cast(new THREE.Mesh(new THREE.BoxGeometry(.4,.08,.34),M.leather));
   saddle.position.set(.05,1.3,0); root.add(saddle);
+  const riderOld=new THREE.Group(); root.add(riderOld);
   const rTorso=cast(new THREE.Mesh(new THREE.CapsuleGeometry(.14,.32,4,10),new THREE.MeshStandardMaterial({color:0x2E4A66,roughness:.85})));
-  rTorso.position.set(.05,1.66,0); root.add(rTorso);
+  rTorso.position.set(.05,1.66,0); riderOld.add(rTorso);
   const rHead=cast(new THREE.Mesh(new THREE.SphereGeometry(.09,10,8),M.armor));
-  rHead.position.set(.05,1.98,0); root.add(rHead);
+  rHead.position.set(.05,1.98,0); riderOld.add(rHead);
   const lance=cast(new THREE.Mesh(new THREE.CylinderGeometry(.015,.025,2.2,6),M.wood));
-  lance.position.set(.1,1.7,.24); lance.rotation.z=-1.25; root.add(lance);
+  lance.position.set(.1,1.7,.24); lance.rotation.z=-1.25; riderOld.add(lance);
   const shp=new THREE.Shape();
   shp.moveTo(-.17,.2); shp.quadraticCurveTo(0,.25,.17,.2);
   shp.quadraticCurveTo(.18,-.08,0,-.24); shp.quadraticCurveTo(-.18,-.08,-.17,.2);
   const sh=cast(new THREE.Mesh(new THREE.ExtrudeGeometry(shp,{depth:.03,bevelEnabled:false}),
     new THREE.MeshStandardMaterial({color:0xC9A227,roughness:.55,metalness:.3})));
-  sh.position.set(.0,1.62,-.2); sh.rotation.y=Math.PI/2*0.9; root.add(sh);
+  sh.position.set(.0,1.62,-.2); sh.rotation.y=Math.PI/2*0.9; riderOld.add(sh);
   root.traverse(o=>{ if(o.isMesh) o.receiveShadow=true; });
-  return {root,legs};
+  return {root,legs,riderOld};
 }
 
 /* ================= 场景：行游地图 ================= */
@@ -661,15 +669,29 @@ cloudSprites(duelScene,8,55);
     duelScene.userData.flags.push(fl);
   }
 }
-/* 决斗者人偶 */
-const P_RIG=buildKnight(0x2E4A66,0xC9A227);
-duelScene.add(P_RIG.root);
-let E_RIG=null;
-function setFoeRig(hex,plume){
-  if(E_RIG){ duelScene.remove(E_RIG.root); }
-  E_RIG=buildKnight(hex,plume||0x8a8a8a);
-  E_RIG.root.rotation.y=Math.PI;
-  duelScene.add(E_RIG.root);
+/* 决斗者（骨骼模型） */
+let P_ACT=null, E_ACT=null;
+const FACE_P=Math.PI/2, FACE_E=-Math.PI/2;   /* 模型朝向 +Z，转向 ±X */
+const FOE_STYLE={
+  brigand:{model:'rogue', show:['Knife','Rogue_Cape','Rogue_Head_Hooded']},
+  talbot:{model:'barbarian', show:['1H_Axe','Barbarian_Round_Shield','Barbarian_Hat']},
+  edmund:{model:'knight', show:['1H_Sword','Round_Shield','Knight_Helmet','Knight_Cape'], tint:0xd9dfe4},
+  belloc:{model:'knight', show:['1H_Sword','Spike_Shield','Knight_Helmet','Knight_Cape'], tint:0x555060},
+};
+function ensurePlayerActor(){
+  if(!P_ACT&&modelsReady){
+    P_ACT=new Actor('knight',{show:['1H_Sword','Badge_Shield','Knight_Helmet','Knight_Cape']});
+    P_ACT.root.rotation.y=FACE_P;
+    duelScene.add(P_ACT.root);
+  }
+}
+function setFoeActor(foeId){
+  ensurePlayerActor();
+  if(E_ACT) duelScene.remove(E_ACT.root);
+  const st=FOE_STYLE[foeId]||FOE_STYLE.belloc;
+  E_ACT=new Actor(st.model,{show:st.show,tint:st.tint});
+  E_ACT.root.rotation.y=FACE_E;
+  duelScene.add(E_ACT.root);
 }
 /* 火花粒子 */
 const sparks=[];
@@ -865,7 +887,7 @@ function startDuel(foeId,opts){
     intel, over:false, aiThink:0, aiReactT:-1, eMove:0, eJustBlocked:false,
   };
   if(opts.pHandicap) duel.p.resolve=100-opts.pHandicap;
-  setFoeRig(cfg.color,cfg.plume);
+  setFoeActor(foeId);
   G.scene='duel'; hud();
   duelHudShow(`${cfg.name} <small>${cfg.epithet}</small>`);
   $('#roundname').textContent=opts.roundName||'';
@@ -890,7 +912,7 @@ function tryAttack(f){
 function tryShove(f,g){
   if(f.state!=='idle'||f.shoveCd>0||f.exhaust>0||f.stam<20) return;
   f.shoveCd=0.9; f.stam-=20;
-  if(Math.abs(f.x-g.x)<86 && g.state!=='stagger'){
+  if(Math.abs(f.x-g.x)<105 && g.state!=='stagger'){
     if(g.state==='windup'||g.state==='idle'){
       g.state='stagger'; g.t=0.68; sfx.shove(); shake=Math.max(shake,.25);
       caption2('撞盾！'+(g===duel.e?'对手趔趄了':'你被撞得趔趄'));
@@ -913,17 +935,17 @@ function midPos(){
 function resolveStrike(att,def,isPlayerAtt){
   const gap=Math.abs(att.x-def.x);
   att.state='strike'; att.t=0.09; sfx.swing();
-  if(gap>128){ return; }
+  if(gap>140){ return; }
   const canBlock=(def.state==='idle'||def.state==='windup') && def.exhaust<=0 && def.state!=='stagger';
   if(canBlock && def.stance===att.strikeStance){
-    def.stam=clamp(def.stam-10,0,100); def.blockFlash=0.3; sfx.clang();
+    def.stam=clamp(def.stam-10,0,100); def.blockFlash=0.3; def._blockPulse=true; sfx.clang();
     spawnSparks(midPos(),0xFFD873); shake=Math.max(shake,.2);
     att.state='recover'; att.t=0.46; att.atkCd=0.5;
     if(isPlayerAtt) duel.eJustBlocked=true;
     return;
   }
   const dmg=isPlayerAtt?22:duel.cfg.dmg;
-  def.resolve-=dmg; def.hurtFlash=0.35; sfx.hit();
+  def.resolve-=dmg; def.hurtFlash=0.35; def._hitPulse=true; sfx.hit();
   spawnSparks(midPos(),0xFF7A4A); shake=Math.max(shake,.4);
   def.x=clamp(def.x+(def.x>att.x?26:-26),80,880);
   att.state='recover'; att.t=0.3; att.atkCd=0.34;
@@ -966,7 +988,7 @@ function tickDuel(dt){
     let mv=0;
     if(keys.ArrowLeft||keys.KeyA) mv-=1;
     if(keys.ArrowRight||keys.KeyD) mv+=1;
-    if(mv){ p.x=clamp(p.x+mv*170*dt,80,e.x-52); p.vx=mv*170; }
+    if(mv){ p.x=clamp(p.x+mv*170*dt,80,e.x-80); p.vx=mv*170; }
   }
   if(pressed.ArrowUp||pressed.KeyW) setStance(p,-1);
   if(pressed.ArrowDown||pressed.KeyS) setStance(p,1);
@@ -1012,7 +1034,7 @@ function aiTick(dt){
   if(e.state!=='idle'||e.exhaust>0) return;
   if(d.aiThink>0) return;
   d.aiThink=0.12+Math.random()*0.18;
-  const wantGap=105;
+  const wantGap=120;
   const punish=d.foeId==='belloc'&&p.exhaust>0;
   const aggr=cfg.aggr*(punish?2.2:1);
   if(gap>wantGap+18){ d.eMove=-1; }
@@ -1032,7 +1054,7 @@ function aiMove(dt){
   const d=duel, e=d.e, p=d.p;
   e.vx=0;
   if(!d.eMove||e.state!=='idle'||e.exhaust>0) return;
-  const nx=clamp(e.x+d.eMove*d.cfg.speed*dt*(d.eMove<0?1:0.8), p.x+52, 880);
+  const nx=clamp(e.x+d.eMove*d.cfg.speed*dt*(d.eMove<0?1:0.8), p.x+80, 880);
   e.vx=(nx-e.x)/Math.max(dt,1e-4); e.x=nx;
 }
 function duelLost(){
@@ -1444,8 +1466,20 @@ function angleLerp(a,b,k){
   while(d<-Math.PI) d+=Math.PI*2;
   return a+d*k;
 }
-let camInit=false;
+let camInit=false, RIDER=null;
+function ensureRider(){
+  if(!RIDER&&modelsReady){
+    RIDER=new Actor('knight',{show:['1H_Sword','Badge_Shield','Knight_Helmet','Knight_Cape'],scale:0.82});
+    RIDER.play('Sit_Chair_Idle');
+    RIDER.root.rotation.y=Math.PI/2;   /* 与马头同向（马身局部 +X 为前） */
+    RIDER.root.position.set(-.02,1.22,0);
+    horse.root.add(RIDER.root);
+    horse.riderOld.visible=false;
+  }
+}
 function renderMap(dt,t){
+  ensureRider();
+  if(RIDER) RIDER.mixer.update(dt);
   /* 马 */
   const hx=wx(player.x), hz=wz(player.y);
   horse.root.position.set(hx,0,hz);
@@ -1473,30 +1507,48 @@ function renderMap(dt,t){
   camera.lookAt(lookTmp);
   renderer.render(mapScene,camera);
 }
+let orbitA=0, baseFov=46;
 function renderDuel(dt,t){
-  if(duel){
+  if(duel&&P_ACT&&E_ACT){
     const p=duel.p,e=duel.e;
-    P_RIG.root.position.x=(p.x-480)*S;
-    E_RIG.root.position.x=(e.x-480)*S;
-    poseKnight(P_RIG,p,dt,t);
-    poseKnight(E_RIG,e,dt,t);
+    P_ACT.root.position.x=(p.x-480)*S;
+    E_ACT.root.position.x=(e.x-480)*S;
+    syncActor(P_ACT,p,dt);
+    syncActor(E_ACT,e,dt);
     duelHudTick();
   }
   /* 旗帜摆动 */
   duelScene.userData.flags.forEach((f,i)=>{ f.rotation.y=Math.sin(t*1.8+i)*0.25; });
   tickSparks(dt);
-  /* 相机：居中两名决斗者 */
+  /* 环绕运镜：镜头绕决斗者中点缓慢扫动 */
   const mid=duel?((duel.p.x+duel.e.x)/2-480)*S:0;
   const gapW=duel?Math.abs(duel.e.x-duel.p.x)*S:6;
-  const dist0=4.6+gapW*0.55;
-  camTmp.set(mid+0.6,1.75+gapW*0.06,dist0);
+  let targetA, R, h, lookY;
+  if(duel&&duel.phase==='salute'){
+    targetA=Math.sin(t*0.35)*1.15;                 /* 开场大幅低机位环视 */
+    R=3.6+gapW*0.35; h=1.15; lookY=1.15;
+  }else if(duel&&duel.over){
+    orbitA+=dt*0.45;                               /* 结算：缓慢绕行跪降者 */
+    targetA=orbitA;
+    R=3.2; h=1.5; lookY=0.95;
+  }else{
+    targetA=Math.sin(t*0.16)*0.72;                 /* 战斗中限幅扫动，保持左右可读 */
+    R=4.0+gapW*0.5; h=1.55+gapW*0.06; lookY=1.05;
+  }
+  if(!(duel&&duel.over)) orbitA+=(targetA-orbitA)*lerpK(dt,1.6);
+  const cx=mid+Math.sin(orbitA)*R;
+  const cz=Math.cos(orbitA)*R;
+  camTmp.set(cx,h,cz);
   camera.position.lerp(camTmp,lerpK(dt,4));
   shake=Math.max(0,shake-dt*1.6);
   if(shake>0){
     camera.position.x+=(Math.random()-.5)*shake*.18;
     camera.position.y+=(Math.random()-.5)*shake*.14;
   }
-  lookTmp.set(mid,1.05,0);
+  /* 命中时轻微推近（FOV 冲击） */
+  const wantFov=baseFov-shake*7;
+  if(Math.abs(camera.fov-wantFov)>0.05){ camera.fov+=(wantFov-camera.fov)*lerpK(dt,10); camera.updateProjectionMatrix(); }
+  lookTmp.set(mid,lookY,0);
   camera.lookAt(lookTmp);
   renderer.render(duelScene,camera);
 }
@@ -1508,13 +1560,18 @@ function renderFinale(dt,t){
   renderer.render(finaleScene,camera);
 }
 let titleT=0;
+const dummyP={stance:1,state:'idle',exhaust:0,blockFlash:0,hurtFlash:0,vx:0,strikeStance:1,t:0};
+const dummyE={stance:0,state:'idle',exhaust:0,blockFlash:0,hurtFlash:0,vx:0,strikeStance:0,t:0};
 function renderTitle(dt,t){
   /* 用决斗场当标题背景：两名骑士对峙，镜头缓移 */
   titleT+=dt;
-  if(!E_RIG) setFoeRig(0x24202A,0x101014);
-  P_RIG.root.position.x=-1.6; E_RIG.root.position.x=1.6;
-  poseKnight(P_RIG,{stance:1,state:'idle',exhaust:0,blockFlash:0,hurtFlash:0,vx:0},dt,t);
-  poseKnight(E_RIG,{stance:0,state:'idle',exhaust:0,blockFlash:0,hurtFlash:0,vx:0},dt,t);
+  if(modelsReady){
+    ensurePlayerActor();
+    if(!E_ACT) setFoeActor('belloc');
+    P_ACT.root.position.x=-1.4; E_ACT.root.position.x=1.4;
+    syncActor(P_ACT,dummyP,dt);
+    syncActor(E_ACT,dummyE,dt);
+  }
   duelScene.userData.flags.forEach((f,i)=>{ f.rotation.y=Math.sin(t*1.8+i)*0.25; });
   const a=titleT*0.06;
   camera.position.set(Math.sin(a)*7.5,2.1+Math.sin(titleT*0.13)*0.4,Math.cos(a)*7.5);
@@ -1536,7 +1593,14 @@ function loop(){
 loop();
 /* 测试钩子 */
 window.__DBG={G, player, LOCS, getDuel:()=>duel, startDuel, EVENTS, finale, shieldScreen, endDuelToMap};
-$('#startbtn').addEventListener('click',()=>{
+/* 模型就绪后才可启程 */
+const startbtn=$('#startbtn');
+startbtn.disabled=true; startbtn.textContent='铸　剑　中　…'; startbtn.style.opacity=.55;
+loadModels().then(()=>{
+  startbtn.disabled=false; startbtn.textContent='启　程'; startbtn.style.opacity=1;
+  window.__DBG.modelsReady=true;
+}).catch(e=>{ console.error('模型加载失败',e); startbtn.textContent='加载失败'; });
+startbtn.addEventListener('click',()=>{
   ac();
   $('#title').style.display='none';
   G.scene='map'; hud(); sfx.horn();

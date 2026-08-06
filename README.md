@@ -24,6 +24,11 @@ npm install
 node build.mjs   # 打包生成 index.html
 ```
 
+角色为真实骨骼动画模型（glTF），构建时以 base64 内嵌（`src/assets/models.js`，由
+`tools/models.mjs` 从 [KayKit Character Pack: Adventurers](https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0)
+裁剪生成——只保留用到的 16 个动画并量化压缩）。该资源包为 CC0 授权（无需署名，此处致谢作者 Kay Lousberg）。
+`src/assets/models.js` 已入库，日常构建无需重新运行模型管线。
+
 ## 操作
 
 | 场景 | 按键 |

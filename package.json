@@ -23,5 +23,10 @@
   "dependencies": {
     "esbuild": "^0.28.1",
     "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@gltf-transform/core": "^4.4.2",
+    "@gltf-transform/extensions": "^4.4.2",
+    "@gltf-transform/functions": "^4.4.2"
   }
 }
