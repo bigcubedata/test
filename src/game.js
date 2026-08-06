@@ -10,31 +10,189 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const dist=(a,b,c,d)=>Math.hypot(a-c,b-d);
 const lerpK=(dt,speed)=>1-Math.exp(-dt*speed);
 
-/* ================= 声音 ================= */
-let AC=null, muted=false;
-function ac(){ if(!AC) AC=new (window.AudioContext||window.webkitAudioContext)(); return AC; }
-function tone(f,dur,type='square',vol=0.05,slide=0){
-  if(muted) return;
+/* ================= 音频引擎（全程序合成，无采样文件） ================= */
+let AC=null, muted=false, master=null, busSfx=null, busMus=null, busAmb=null;
+function ac(){
+  if(!AC){
+    AC=new (window.AudioContext||window.webkitAudioContext)();
+    master=AC.createGain(); master.gain.value=1; master.connect(AC.destination);
+    busSfx=AC.createGain(); busSfx.gain.value=.9;  busSfx.connect(master);
+    busMus=AC.createGain(); busMus.gain.value=.6;  busMus.connect(master);
+    busAmb=AC.createGain(); busAmb.gain.value=.85; busAmb.connect(master);
+  }
+  return AC;
+}
+function tone(f,dur,type='square',vol=0.05,slide=0,at=0){
+  if(muted||!AC) return;
   try{
-    const a=ac(), o=a.createOscillator(), g=a.createGain();
-    o.type=type; o.frequency.value=f;
-    if(slide) o.frequency.linearRampToValueAtTime(f+slide, a.currentTime+dur);
-    g.gain.setValueAtTime(vol,a.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+dur);
-    o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime+dur);
+    const t0=AC.currentTime+at;
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.type=type; o.frequency.setValueAtTime(f,t0);
+    if(slide) o.frequency.linearRampToValueAtTime(Math.max(30,f+slide),t0+dur);
+    g.gain.setValueAtTime(0,t0);
+    g.gain.linearRampToValueAtTime(vol,t0+.006);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+    o.connect(g); g.connect(busSfx); o.start(t0); o.stop(t0+dur+.05);
   }catch(e){}
 }
+let _noise=null;
+function noiseBuffer(){
+  if(!_noise){
+    const sr=AC.sampleRate;
+    _noise=AC.createBuffer(1,sr*2,sr);
+    const d=_noise.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  }
+  return _noise;
+}
+function noiseHit({dur=.2,freq=1000,q=1,type='bandpass',vol=.1,at=0,slide=0,attack=.006,bus}={}){
+  if(muted||!AC) return;
+  try{
+    const t0=AC.currentTime+at;
+    const s=AC.createBufferSource(); s.buffer=noiseBuffer(); s.loop=true;
+    const f=AC.createBiquadFilter(); f.type=type; f.Q.value=q;
+    f.frequency.setValueAtTime(freq,t0);
+    if(slide) f.frequency.linearRampToValueAtTime(Math.max(50,freq+slide),t0+dur);
+    const g=AC.createGain();
+    g.gain.setValueAtTime(0,t0);
+    g.gain.linearRampToValueAtTime(vol,t0+attack);
+    g.gain.exponentialRampToValueAtTime(.0001,t0+dur);
+    s.connect(f); f.connect(g); g.connect(bus||busSfx);
+    s.start(t0); s.stop(t0+dur+.1);
+  }catch(e){}
+}
+function metal(fs,dur,vol,at=0){ fs.forEach((f,i)=>tone(f,dur*(1-i*.1),'square',vol*Math.pow(.62,i),0,at)); }
+/* Karplus-Strong 拨弦（琉特琴） */
+const _pluck={};
+function pluckBuf(freq){
+  const key=Math.round(freq);
+  if(_pluck[key]) return _pluck[key];
+  const sr=AC.sampleRate, N=Math.max(8,Math.round(sr/freq)), len=(sr*1.1)|0;
+  const buf=AC.createBuffer(1,len,sr), d=buf.getChannelData(0);
+  const ring=new Float32Array(N);
+  for(let i=0;i<N;i++) ring[i]=Math.random()*2-1;
+  let idx=0;
+  for(let i=0;i<len;i++){
+    const cur=ring[idx], nxt=ring[(idx+1)%N];
+    d[i]=cur; ring[idx]=.996*.5*(cur+nxt); idx=(idx+1)%N;
+  }
+  _pluck[key]=buf; return buf;
+}
+function pluck(freq,vol=.1,at=0){
+  if(muted||!AC) return;
+  try{
+    const t0=AC.currentTime+at;
+    const s=AC.createBufferSource(); s.buffer=pluckBuf(freq);
+    const g=AC.createGain(); g.gain.value=vol;
+    s.connect(g); g.connect(busMus); s.start(t0);
+  }catch(e){}
+}
+function crowdSwell(v=1){
+  if(duel&&duel.foeId==='brigand') return;   /* 荒林无观众 */
+  noiseHit({dur:1.5,freq:640,q:.7,vol:.09*v,attack:.28,bus:busAmb});
+}
+function hornNote(f,dur,at,vol=.05){
+  tone(f,dur,'sawtooth',vol,0,at); tone(f*1.005,dur,'sawtooth',vol*.5,0,at);
+  tone(f/2,dur,'triangle',vol*.6,0,at);
+}
 const sfx={
-  clang(){ tone(1750,.09,'square',.045); tone(920,.14,'sawtooth',.03,-300); },
-  hit(){ tone(150,.16,'sawtooth',.07,-60); tone(90,.2,'triangle',.06); },
-  swing(){ tone(360,.08,'sine',.03,220); },
-  shove(){ tone(120,.14,'square',.05,-40); },
-  horn(){ tone(392,.35,'sawtooth',.04); setTimeout(()=>tone(523,.55,'sawtooth',.045),240); },
-  coin(){ tone(1320,.1,'sine',.04); setTimeout(()=>tone(1760,.15,'sine',.035),70); },
-  yield_(){ tone(660,.3,'sine',.04,-160); },
-  crack(){ tone(70,.22,'sawtooth',.1,-30); tone(420,.07,'square',.06,-200); tone(1500,.05,'square',.03); },
+  clang(){ metal([2470,3160,4680],.17,.05); noiseHit({dur:.07,freq:6500,type:'highpass',vol:.05}); tone(170,.1,'triangle',.05,-50); },
+  hit(){ noiseHit({dur:.16,freq:320,type:'lowpass',vol:.15}); tone(105,.2,'sine',.11,-45); metal([2900,4150],.05,.018,.015); crowdSwell(.35); },
+  swing(){ noiseHit({dur:.14,freq:650,q:2.2,vol:.05,slide:950}); },
+  shove(){ noiseHit({dur:.18,freq:210,type:'lowpass',vol:.15}); metal([2600,3900],.06,.02,.01); },
+  horn(){ hornNote(392,.4,0); hornNote(523.25,.7,.28); },
+  fanfare(){ hornNote(392,.28,0); hornNote(523.25,.28,.24); hornNote(659.25,.9,.48,.06); crowdSwell(1.2); },
+  coin(){ tone(1320,.1,'sine',.04); tone(1760,.16,'sine',.035,0,.07); },
+  yield_(){ tone(660,.35,'sine',.045,-170); this.fanfare(); },
+  crack(){ noiseHit({dur:.26,freq:1600,q:.6,vol:.17,slide:-1000}); tone(62,.3,'sine',.13,-22);
+    for(let i=0;i<3;i++) noiseHit({dur:.05,freq:3200+i*900,vol:.04,at:.03+i*.045});
+    crowdSwell(.8); },
+  hoof(v=1){ noiseHit({dur:.06,freq:260,type:'lowpass',vol:.08*v}); tone(72,.05,'sine',.055*v,-18); },
+  brace(q){ tone(210,.08,'square',.05); metal([3300],.05,.02,.02);
+    if(q>.85) tone(1568,.14,'sine',.04,0,.05); },
+  drum(v=1){ tone(60,.26,'sine',.13*v,-16); noiseHit({dur:.07,freq:160,type:'lowpass',vol:.05*v}); },
+  cheer(v=1){ crowdSwell(1.4*v);
+    for(let i=0;i<7;i++) tone(280+Math.random()*420,.12+Math.random()*.1,'square',.012,Math.random()*120-40,Math.random()*.6); },
+  gasp(){ noiseHit({dur:.8,freq:520,q:.8,vol:.1,slide:-220,attack:.12,bus:busAmb}); },
+  bell(){ const f=392;
+    [1,2.42,3.87,5.4].forEach((m,i)=>tone(f*m,2.6-i*.5,'sine',.05*Math.pow(.6,i)));
+    noiseHit({dur:.04,freq:5000,type:'highpass',vol:.03}); },
+  tick(){ tone(880,.035,'sine',.022); },
 };
-$('#mutebtn').addEventListener('click',()=>{ muted=!muted; $('#mutebtn').textContent=muted?'∅':'♪'; });
+/* 环境声与生成乐 */
+const SND={inited:false,windG:null,crowdG:null,droneG:null,phraseT:2.5,drumT:1,hoofT:0};
+function ambInit(){
+  if(SND.inited||!AC) return;
+  SND.inited=true;
+  try{
+    const wind=AC.createBufferSource(); wind.buffer=noiseBuffer(); wind.loop=true;
+    const wf=AC.createBiquadFilter(); wf.type='lowpass'; wf.frequency.value=240; wf.Q.value=.4;
+    SND.windG=AC.createGain(); SND.windG.gain.value=0;
+    wind.connect(wf); wf.connect(SND.windG); SND.windG.connect(busAmb); wind.start();
+    const wl=AC.createOscillator(); wl.frequency.value=.11;
+    const wlg=AC.createGain(); wlg.gain.value=110;
+    wl.connect(wlg); wlg.connect(wf.frequency); wl.start();
+    const crowd=AC.createBufferSource(); crowd.buffer=noiseBuffer(); crowd.loop=true; crowd.playbackRate.value=.8;
+    const cf=AC.createBiquadFilter(); cf.type='bandpass'; cf.frequency.value=560; cf.Q.value=.6;
+    SND.crowdG=AC.createGain(); SND.crowdG.gain.value=0;
+    crowd.connect(cf); cf.connect(SND.crowdG); SND.crowdG.connect(busAmb); crowd.start();
+    SND.droneG=AC.createGain(); SND.droneG.gain.value=0; SND.droneG.connect(busMus);
+    for(const [f,v] of [[73.42,.5],[110,.3]]){
+      const o=AC.createOscillator(); o.type='triangle'; o.frequency.value=f;
+      const og=AC.createGain(); og.gain.value=v;
+      o.connect(og); og.connect(SND.droneG); o.start();
+    }
+  }catch(e){}
+}
+const LUTE=[293.66,329.63,349.23,392,440,523.25,587.33]; /* D 多利亚调式 */
+function sndTick(dt){
+  if(!AC) return;
+  ambInit();
+  let wind=0,crowd=0,drone=0;
+  if(G.scene==='map'){ wind=1; drone=.7; }
+  else if(G.scene==='title'){ wind=.6; drone=1.2; }
+  else if(G.scene==='duel'){ const wild=duel&&duel.foeId==='brigand'; crowd=wild?0:1; wind=wild?.9:.2; }
+  else if(G.scene==='joust'){ crowd=1.25; wind=.25; }
+  else if(G.scene==='finale'){ drone=1.6; }
+  const k=1-Math.exp(-dt*1.4);
+  if(SND.windG) SND.windG.gain.value+=(wind*.3-SND.windG.gain.value)*k;
+  if(SND.crowdG) SND.crowdG.gain.value+=(crowd*.14-SND.crowdG.gain.value)*k;
+  if(SND.droneG) SND.droneG.gain.value+=(drone*.09-SND.droneG.gain.value)*k;
+  /* 琉特琴散句（标题/行游） */
+  if(!muted&&(G.scene==='title'||G.scene==='map')){
+    SND.phraseT-=dt;
+    if(SND.phraseT<=0){
+      let at=0, idx=(Math.random()*LUTE.length)|0;
+      const n=3+((Math.random()*4)|0);
+      for(let i=0;i<n;i++){
+        pluck(LUTE[idx]*(Math.random()<.22?.5:1),.09,at);
+        at+=.3+Math.random()*.45;
+        idx=clamp(idx+((Math.random()*3)|0)-1,0,LUTE.length-1);
+      }
+      SND.phraseT=5.5+Math.random()*6;
+    }
+  }
+  /* 决斗战鼓 */
+  if(G.scene==='duel'&&duel&&!duel.over&&duel.phase==='fight'){
+    SND.drumT-=dt;
+    if(SND.drumT<=0){ sfx.drum(.7); SND.drumT=2.4; }
+  }
+  /* 冲锋鼓点：越近越急 */
+  if(G.scene==='joust'&&joust&&joust.phase==='charge'){
+    SND.drumT-=dt;
+    if(SND.drumT<=0){ sfx.drum(1); SND.drumT=clamp((joust.ex-joust.px)/14*.85,.16,.85); }
+  }
+  /* 行游马蹄 */
+  if(G.scene==='map'&&player.moving){
+    SND.hoofT-=dt;
+    if(SND.hoofT<=0){ sfx.hoof(.45); SND.hoofT=.17; }
+  }
+}
+$('#mutebtn').addEventListener('click',()=>{
+  muted=!muted;
+  if(master) master.gain.value=muted?0:1;
+  $('#mutebtn').textContent=muted?'∅':'♪';
+});
 
 /* ================= 游戏状态 ================= */
 const G={
@@ -83,7 +241,7 @@ function showPanel({title,body,choices,quiet}){
     const b=document.createElement('button');
     b.innerHTML=c.label+(c.sub?`<span class="sub">${c.sub}</span>`:'');
     if(c.disabled) b.disabled=true;
-    b.addEventListener('click',()=>{ closePanel(); c.fx&&c.fx(); });
+    b.addEventListener('click',()=>{ sfx.tick(); closePanel(); c.fx&&c.fx(); });
     box.appendChild(b);
   });
   const first=box.querySelector('button:not(:disabled)'); first&&first.focus();
@@ -1208,7 +1366,10 @@ function resolvePass(){
   if(eRes){ spawnSparks(new THREE.Vector3(midX-.5,ZONE_Y[eRes.zone],.4),0xFF7A4A); }
   if(pRes||eRes){ sfx.crack(); shake=Math.max(shake,.7); j.slow=0.22; }
   else sfx.swing();
-  if(unhorse){ banner('坠　马！',2000); startFall(unhorse); }
+  if(unhorse){
+    banner('坠　马！',2000); startFall(unhorse);
+    if(unhorse==='e') sfx.cheer(1.2); else sfx.gasp();
+  }
   else if(pRes) banner('中'+ZONE_NAME[pRes.zone]+'！'+'　一二三'[ZONE_PTS[pRes.zone]]+' 分',1500);
   else banner('枪走空了',1200);
   const en=FOES[j.foeId].name;
@@ -1264,7 +1425,7 @@ function tickJoust(dt){
       j.ve=Math.min(j.ve+2.6*sdt,j.cfg.speed);
       j.px+=j.vp*sdt; j.ex-=j.ve*sdt;
       j.gallopT-=sdt;
-      if(j.gallopT<=0){ j.gallopT=0.21; tone(85,.05,'triangle',.035); }
+      if(j.gallopT<=0){ j.gallopT=0.21; sfx.hoof(); }
       /* 瞄准 */
       let da=0;
       if(keys.KeyW||keys.ArrowUp) da+=1;
@@ -1283,7 +1444,7 @@ function tickJoust(dt){
           j.braceQ=1-Math.min(Math.abs(tti-0.75)/0.9,0.65);
           caption2(j.braceQ>0.85?'夹得正！':'枪已夹定');
         }
-        tone(240,.1,'square',.05);
+        sfx.brace(j.braceQ);
       }
       if(gap<=1.15){ j.phase='impact'; j.t=0; resolvePass(); }
       break;
@@ -1743,6 +1904,7 @@ function epithet(){
 }
 function shieldScreen(){
   G.scene='finale'; hud(); hint(''); duelHudHide();
+  sfx.bell();
   buildFinaleShield();
   overlay.classList.add('side');
   const [title,judge]=epithet();
@@ -1930,6 +2092,7 @@ function loop(){
   else if(G.scene==='joust'){ if(!panelOpen) tickJoust(dt); renderJoust(dt,t); }
   else if(G.scene==='finale'){ renderFinale(dt,t); }
   else renderTitle(dt,t);
+  sndTick(dt);
   clearPressed();
   requestAnimationFrame(loop);
 }

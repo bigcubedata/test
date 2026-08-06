@@ -25,6 +25,8 @@ npm install
 node build.mjs   # 打包生成 index.html
 ```
 
+音频为全程序合成（WebAudio）：金属撞击泛音、琉特琴生成曲（Karplus-Strong 拨弦）、场景环境声与观众反应，无任何采样文件。
+
 角色为真实骨骼动画模型（glTF），构建时以 base64 内嵌（`src/assets/models.js`，由
 `tools/models.mjs` 从 [KayKit Character Pack: Adventurers](https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0)
 裁剪生成——只保留用到的 16 个动画并量化压缩）。该资源包为 CC0 授权（无需署名，此处致谢作者 Kay Lousberg）。
