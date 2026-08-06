@@ -32,6 +32,7 @@ const sfx={
   horn(){ tone(392,.35,'sawtooth',.04); setTimeout(()=>tone(523,.55,'sawtooth',.045),240); },
   coin(){ tone(1320,.1,'sine',.04); setTimeout(()=>tone(1760,.15,'sine',.035),70); },
   yield_(){ tone(660,.3,'sine',.04,-160); },
+  crack(){ tone(70,.22,'sawtooth',.1,-30); tone(420,.07,'square',.06,-200); tone(1500,.05,'square',.03); },
 };
 $('#mutebtn').addEventListener('click',()=>{ muted=!muted; $('#mutebtn').textContent=muted?'∅':'♪'; });
 
@@ -335,10 +336,10 @@ function syncActor(actor,f,dt){
   actor.setEmissive(f.hurtFlash>0?Math.max(0,f.hurtFlash*2):0);
 }
 /* ================= 马与骑者（行游） ================= */
-function buildHorse(){
+function buildHorse(coatHex=0x5c452c){
   const root=new THREE.Group();
   const cast=m=>{ m.castShadow=true; return m; };
-  const coat=new THREE.MeshStandardMaterial({color:0x5c452c,roughness:.85});
+  const coat=new THREE.MeshStandardMaterial({color:coatHex,roughness:.85});
   const body=cast(new THREE.Mesh(new THREE.CapsuleGeometry(.34,1.05,6,12),coat));
   body.rotation.z=Math.PI/2; body.position.y=0.98; root.add(body);
   const neck=cast(new THREE.Mesh(new THREE.CylinderGeometry(.13,.2,.62,10),coat));
@@ -866,7 +867,7 @@ const FOES={
   talbot:{name:'塔尔博', epithet:'红野猪', color:0x8E3B2E, plume:0x6b1f14, dmg:22, resolveMax:100,
     windup:520, reaction:700, reactP:.28, aggr:1.25, feintP:.04, counter:false, speed:165,
     stanceW:[0.62,0.25,0.13],
-    habit:'出手必是大开大合的上段劈砍，格挡却慢。举剑时看他的肩。'},
+    habit:'出手必是大开大合的上段劈砍，格挡却慢。举剑时看他的肩。'},   /* 步战之言，马上另有一句 */
   edmund:{name:'埃德蒙爵士', epithet:'灰鹭', color:0x5A6A76, plume:0xB9C4CC, dmg:22, resolveMax:105,
     windup:430, reaction:230, reactP:.85, aggr:.45, feintP:.10, counter:true, speed:140,
     stanceW:[0.3,0.4,0.3],
@@ -888,6 +889,8 @@ function startDuel(foeId,opts){
   };
   if(opts.pHandicap) duel.p.resolve=100-opts.pHandicap;
   setFoeActor(foeId);
+  if(P_ACT) P_ACT.root.visible=true;
+  if(E_ACT) E_ACT.root.visible=true;
   G.scene='duel'; hud();
   duelHudShow(`${cfg.name} <small>${cfg.epithet}</small>`);
   $('#roundname').textContent=opts.roundName||'';
@@ -1071,6 +1074,313 @@ function endDuelToMap(){
   G.scene='map'; hud(); hint(MAP_HINT);
 }
 
+/* ================= 马上长枪对冲 ================= */
+const ZONE_Y={helm:2.1, chest:1.8, shield:1.5};
+const ZONE_PTS={helm:3, chest:2, shield:1};
+const ZONE_NAME={helm:'盔',chest:'胸',shield:'盾'};
+const AIM_MIN=1.35, AIM_MAX=2.35;
+const JOUST_AI={
+  talbot:{zoneW:{helm:.1,chest:.72,shield:.18}, acc:.1, brace:[.5,.72], guard:.35, speed:5.2,
+    jhabit:'马上一枪永远瞄你的胸甲，夹枪又总是过早——冲到半程枪尖就压下来了。'},
+  belloc:{zoneW:{helm:.42,chest:.42,shield:.16}, acc:.055, brace:[.78,.96], guard:.72, speed:5.5,
+    jhabit:'马上他惯打盔顶，枪快而准，极难挑落。护住自己，赌一枪正的。'},
+};
+let joust=null, JW=null;
+function buildLance(bandHex){
+  const g=new THREE.Group();
+  const shaft=new THREE.Mesh(new THREE.CylinderGeometry(.026,.052,3.3,8),M.wood);
+  shaft.rotation.z=-Math.PI/2; shaft.position.x=1.55; shaft.castShadow=true; g.add(shaft);
+  const band=new THREE.Mesh(new THREE.CylinderGeometry(.056,.056,.25,8),
+    new THREE.MeshStandardMaterial({color:bandHex,roughness:.6,metalness:.3}));
+  band.rotation.z=-Math.PI/2; band.position.x=.9; g.add(band);
+  const guard=new THREE.Mesh(new THREE.ConeGeometry(.16,.22,10),M.armorDark);
+  guard.rotation.z=Math.PI/2; guard.position.x=.42; g.add(guard);
+  const tip=new THREE.Mesh(new THREE.ConeGeometry(.035,.16,8),M.blade);
+  tip.rotation.z=-Math.PI/2; tip.position.x=3.28; g.add(tip);
+  return g;
+}
+function ensureJoustWorld(){
+  if(JW) return;
+  const barrier=new THREE.Group();
+  const rail=new THREE.Mesh(new THREE.BoxGeometry(15,.8,.12),M.wood);
+  rail.position.y=.5; rail.castShadow=true; barrier.add(rail);
+  const cloth=new THREE.Mesh(new THREE.BoxGeometry(15,.34,.2),
+    new THREE.MeshStandardMaterial({color:0x8E2B20,roughness:.85}));
+  cloth.position.y=1.0; cloth.castShadow=true; barrier.add(cloth);
+  for(let x=-7;x<=7;x+=2){
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(.06,.06,1.1,7),M.woodDark);
+    post.position.set(x,.55,0); barrier.add(post);
+  }
+  duelScene.add(barrier);
+  const hp=buildHorse(0x5c452c), he=buildHorse(0x35302c);
+  hp.riderOld.visible=false; he.riderOld.visible=false;
+  he.root.rotation.y=Math.PI;
+  duelScene.add(hp.root); duelScene.add(he.root);
+  const lp=buildLance(0xC9A227), le=buildLance(0x7a7a7a);
+  lp.position.set(.15,1.7,.24); lp.rotation.y=0.16; hp.root.add(lp);
+  const le2=le; le2.position.set(.15,1.7,.24); le2.rotation.y=0.16; he.root.add(le2);
+  JW={barrier,hp,he,lp,le,pRider:null,eRider:null};
+  setJoustVisible(false);
+}
+function setJoustVisible(v){
+  JW.barrier.visible=v; JW.hp.root.visible=v; JW.he.root.visible=v;
+}
+function clearJoustRiders(){
+  for(const k of ['pRider','eRider']){
+    const r=JW[k];
+    if(r){ r.root.parent&&r.root.parent.remove(r.root); JW[k]=null; }
+  }
+}
+function joustRiders(foeId){
+  clearJoustRiders();
+  const mk=(model,style)=>{
+    const a=new Actor(model,Object.assign({scale:0.82},style));
+    a.play('Sit_Chair_Idle');
+    a.root.rotation.y=Math.PI/2;
+    a.root.position.set(-.02,1.22,0);
+    return a;
+  };
+  JW.pRider=mk('knight',{show:['1H_Sword','Badge_Shield','Knight_Helmet','Knight_Cape']});
+  JW.hp.root.add(JW.pRider.root);
+  const st=FOE_STYLE[foeId]||FOE_STYLE.belloc;
+  JW.eRider=mk(st.model,{show:st.show,tint:st.tint});
+  JW.he.root.add(JW.eRider.root);
+}
+function startJoust(foeId,opts){
+  ensureJoustWorld(); joustRiders(foeId);
+  setJoustVisible(true);
+  if(P_ACT) P_ACT.root.visible=false;      /* 步战演员让场 */
+  if(E_ACT) E_ACT.root.visible=false;
+  joust={
+    foeId, opts, cfg:JOUST_AI[foeId],
+    pass:1, passes:opts.passes||3, pts:{p:0,e:0}, qSum:{p:0,e:0},
+    phase:'ready', t:0, slow:1, fall:null,
+    px:-7.2, ex:7.2, vp:0, ve:0,
+    aim:1.8, wob:0, wobT:0, braced:false, braceQ:0, early:false,
+    eZone:null, eBraceQ:0,
+    lastPass:null, decided:null, gallopT:0,
+  };
+  pickFoePassPlan();
+  G.scene='joust'; hud(); duelHudHide();
+  $('#jgauge').style.display='block'; $('#jgauge').classList.remove('braced');
+  $('#roundname').textContent=opts.roundName||'马上长枪';
+  hint('W/S 调整枪尖高低 · 冲近一瞬按 J 夹枪锁定 · 盾一分 胸两分 盔三分 · 坠马立判');
+  banner('第 '+'一二三四五'[joust.pass-1]+' 合',1400);
+  if(G.flags['intel_'+foeId]&&joust.cfg.jhabit) setTimeout(()=>caption('老侍从之言：'+joust.cfg.jhabit,5200),1500);
+  sfx.horn();
+}
+function pickFoePassPlan(){
+  const j=joust, w=j.cfg.zoneW, r=Math.random();
+  j.eZone=r<w.helm?'helm':(r<w.helm+w.chest?'chest':'shield');
+  j.eBraceQ=j.cfg.brace[0]+Math.random()*(j.cfg.brace[1]-j.cfg.brace[0]);
+  j.braced=false; j.early=false; j.braceQ=0; j.wobT=Math.random()*9;
+}
+const gauss=()=>((Math.random()+Math.random()+Math.random())-1.5);
+function resolvePass(){
+  const j=joust;
+  /* 玩家判定 */
+  let pRes=null;
+  const effAim=j.aim+j.wob;
+  if(j.braced){
+    let zone=null,best=1;
+    for(const z of Object.keys(ZONE_Y)){
+      const e=Math.abs(effAim-ZONE_Y[z]);
+      if(e<0.14&&e<best){ zone=z; best=e; }
+    }
+    if(zone) pRes={zone, q:ZONE_PTS[zone]*j.braceQ*(1-best*2.2)};
+  }
+  /* 对手判定 */
+  let eRes=null;
+  {
+    const err=Math.abs(gauss()*j.cfg.acc*2);
+    if(err<0.14) eRes={zone:j.eZone, q:ZONE_PTS[j.eZone]*j.eBraceQ*(1-err*2.2)};
+  }
+  if(pRes){ j.pts.p+=ZONE_PTS[pRes.zone]; j.qSum.p+=pRes.q; }
+  if(eRes){ j.pts.e+=ZONE_PTS[eRes.zone]; j.qSum.e+=eRes.q; }
+  const pq=pRes?pRes.q:0, eq=eRes?eRes.q:0;
+  let unhorse=null;
+  if(pq>=1.85&&pq-eq>0.85&&Math.random()<(pq-1.5)*0.38+(1-j.cfg.guard)*0.3) unhorse='e';
+  else if(eq>=1.85&&eq-pq>0.85&&Math.random()<(eq-1.5)*0.26) unhorse='p';
+  j.lastPass={pRes,eRes,unhorse};
+  /* 演出 */
+  const midX=(j.px+j.ex)/2;
+  if(pRes){ spawnSparks(new THREE.Vector3(midX+.5,ZONE_Y[pRes.zone],-.4),0xFFD873); }
+  if(eRes){ spawnSparks(new THREE.Vector3(midX-.5,ZONE_Y[eRes.zone],.4),0xFF7A4A); }
+  if(pRes||eRes){ sfx.crack(); shake=Math.max(shake,.7); j.slow=0.22; }
+  else sfx.swing();
+  if(unhorse){ banner('坠　马！',2000); startFall(unhorse); }
+  else if(pRes) banner('中'+ZONE_NAME[pRes.zone]+'！'+'　一二三'[ZONE_PTS[pRes.zone]]+' 分',1500);
+  else banner('枪走空了',1200);
+  const en=FOES[j.foeId].name;
+  setTimeout(()=>{ if(joust) caption(
+    (j.lastPass.eRes?en+'的枪中了你的'+ZONE_NAME[j.lastPass.eRes.zone]+'甲。':en+'的枪擦身而过。')+
+    '　战况 '+j.pts.p+' — '+j.pts.e,3400); },1600);
+}
+function startFall(who){
+  const j=joust;
+  const rider=who==='e'?JW.eRider:JW.pRider;
+  duelScene.attach(rider.root);
+  j.fall={who, rider, vy:2.6, vx:(who==='e'?1:-1)*2.2, landed:false};
+  rider.play('Hit_B',{loop:false,clamp:true});
+}
+function finishJoust(){
+  const j=joust;
+  let winner=null, unhorse=j.decided&&j.decided.unhorse||null;
+  if(unhorse) winner=unhorse==='e'?'p':'e';
+  else if(j.pts.p!==j.pts.e) winner=j.pts.p>j.pts.e?'p':'e';
+  else if(Math.abs(j.qSum.p-j.qSum.e)>0.01) winner=j.qSum.p>j.qSum.e?'p':'e';
+  const result={winner, unhorse, pts:{...j.pts}};
+  setJoustVisible(false);
+  clearJoustRiders();
+  $('#jgauge').style.display='none';
+  $('#roundname').textContent='';
+  joust=null;
+  G.scene='duel';           /* 竞技场空景垫底，等待面板/下一阶段 */
+  j.opts.onDone(result);
+}
+function tickJoust(dt){
+  const j=joust; if(!j) return;
+  j.slow+=(1-j.slow)*lerpK(dt,2.2);
+  const sdt=dt*j.slow;
+  j.t+=sdt;
+  /* 落马动画 */
+  if(j.fall&&!j.fall.landed){
+    const f=j.fall, r=f.rider.root;
+    f.vy-=9.2*sdt;
+    r.position.y+=f.vy*sdt; r.position.x+=f.vx*sdt;
+    r.rotation.z+=(f.who==='e'?1:-1)*2.2*sdt;
+    if(r.position.y<=0.12){
+      r.position.y=0.12; f.landed=true;
+      f.rider.play('Sit_Floor_Down',{loop:false,clamp:true});
+      r.rotation.z*=0.3;
+    }
+  }
+  switch(j.phase){
+    case 'ready':
+      if(j.t>1.5){ j.phase='charge'; j.t=0; banner('冲　！',800); }
+      break;
+    case 'charge':{
+      j.vp=Math.min(j.vp+2.6*sdt,5.2);
+      j.ve=Math.min(j.ve+2.6*sdt,j.cfg.speed);
+      j.px+=j.vp*sdt; j.ex-=j.ve*sdt;
+      j.gallopT-=sdt;
+      if(j.gallopT<=0){ j.gallopT=0.21; tone(85,.05,'triangle',.035); }
+      /* 瞄准 */
+      let da=0;
+      if(keys.KeyW||keys.ArrowUp) da+=1;
+      if(keys.KeyS||keys.ArrowDown) da-=1;
+      j.aim=clamp(j.aim+da*1.05*sdt,AIM_MIN,AIM_MAX);
+      j.wobT+=sdt;
+      const amp=(0.028+j.vp*0.02)*(j.braced?0.32:1)*(j.early?1.7:1);
+      j.wob=Math.sin(j.wobT*8.7)*amp+Math.sin(j.wobT*5.1+1.3)*amp*0.6;
+      /* 夹枪 */
+      const gap=j.ex-j.px, closing=j.vp+j.ve, tti=gap/Math.max(closing,0.1);
+      if((pressed.KeyJ||pressed.Space)&&!j.braced){
+        j.braced=true;
+        $('#jgauge').classList.add('braced');
+        if(tti>2.1){ j.braceQ=0.35; j.early=true; caption2('夹枪太早——手臂在发颤！'); }
+        else{
+          j.braceQ=1-Math.min(Math.abs(tti-0.75)/0.9,0.65);
+          caption2(j.braceQ>0.85?'夹得正！':'枪已夹定');
+        }
+        tone(240,.1,'square',.05);
+      }
+      if(gap<=1.15){ j.phase='impact'; j.t=0; resolvePass(); }
+      break;
+    }
+    case 'impact':
+      j.px+=j.vp*sdt; j.ex-=j.ve*sdt;
+      j.vp=Math.max(0,j.vp-3.5*sdt); j.ve=Math.max(0,j.ve-3.5*sdt);
+      j.px=Math.min(j.px,7.4); j.ex=Math.max(j.ex,-7.4);
+      if(j.t>2.0){
+        const lp=j.lastPass;
+        const singleDone=j.passes===1;
+        const decided=lp.unhorse||singleDone||
+          (j.pass>=j.passes&&j.pts.p!==j.pts.e)||(j.pass>=5);
+        if(decided){ j.decided=lp; j.phase='result'; j.t=0; }
+        else{ j.phase='turn'; j.t=0; $('#fade').style.opacity=1; }
+      }
+      break;
+    case 'turn':
+      if(j.t>0.5){
+        j.pass++;
+        j.px=-7.2; j.ex=7.2; j.vp=0; j.ve=0;
+        j.aim=1.8; pickFoePassPlan();
+        $('#jgauge').classList.remove('braced');
+        $('#fade').style.opacity=0;
+        j.phase='ready'; j.t=0;
+        banner('第 '+'一二三四五'[Math.min(j.pass-1,4)]+' 合',1400);
+      }
+      break;
+    case 'result':
+      if(j.t>2.2) finishJoust();
+      break;
+  }
+  /* 测试钩子 */
+  if(j._force){
+    j.pts=j._force==='p'?{p:9,e:0}:{p:0,e:9};
+    j.decided=null; j.lastPass=j.lastPass||{pRes:null,eRes:null,unhorse:null};
+    j._force=null; j.phase='result'; j.t=99;
+  }
+}
+function renderJoust(dt,t){
+  const j=joust; if(!j) return;
+  const sdt=dt*j.slow;
+  /* 马匹与骑手 */
+  JW.hp.root.position.set(j.px,0,0.55);
+  JW.he.root.position.set(j.ex,0,-0.55);
+  const gaitP=j.vp>0.2?1:0, gaitE=j.ve>0.2?1:0;
+  JW.hp.legs.forEach((g,i)=>{ g.rotation.z=gaitP*Math.sin(t*13+(i%2?Math.PI:0)+(i>1?1.4:0))*0.6; });
+  JW.he.legs.forEach((g,i)=>{ g.rotation.z=gaitE*Math.sin(t*13+(i%2?Math.PI:0)+(i>1?1.4:0))*0.6; });
+  JW.hp.root.position.y=gaitP*Math.abs(Math.sin(t*13))*0.06;
+  JW.he.root.position.y=gaitE*Math.abs(Math.sin(t*13))*0.06;
+  if(JW.pRider) JW.pRider.mixer.update(sdt);
+  if(JW.eRider) JW.eRider.mixer.update(sdt);
+  /* 长枪姿态：未夹枪斜举，夹枪后放平指向瞄准高度 */
+  const couch=j.braced||j.phase!=='charge';
+  const pTilt=j.braced?((j.aim+j.wob)-1.7)/3.0:0.95-(j.vp*0.06);
+  JW.lp.rotation.z+=(pTilt-JW.lp.rotation.z)*lerpK(dt,j.braced?10:4);
+  const eTilt=(j.phase==='charge'&&(j.ex-j.px)/(j.vp+j.ve+0.1)<1.4)?((ZONE_Y[j.eZone]||1.8)-1.7)/3.0:0.95-(j.ve*0.06);
+  JW.le.rotation.z+=(eTilt-JW.le.rotation.z)*lerpK(dt,6);
+  /* 瞄准标尺 */
+  const mark=$('#jmark');
+  if(mark) mark.style.top=((AIM_MAX-(j.aim+j.wob))/(AIM_MAX-AIM_MIN)*100)+'%';
+  /* 旗与粒子 */
+  duelScene.userData.flags.forEach((f,i)=>{ f.rotation.y=Math.sin(t*1.8+i)*0.25; });
+  tickSparks(sdt);
+  /* 相机 */
+  const mid=(j.px+j.ex)/2;
+  let cx,cy,cz,lx,ly;
+  if(j.phase==='ready'){ cx=j.px+2.4; cy=1.45; cz=5.6; lx=j.px+4; ly=1.7; }
+  else if(j.phase==='charge'){ cx=mid*0.72; cy=1.75; cz=6.4-Math.min(j.vp,5)*0.28; lx=mid; ly=1.55; }
+  else if(j.phase==='impact'){ cx=mid; cy=1.5; cz=3.9; lx=mid; ly=1.6; }
+  else{ /* result/turn：环视 */
+    const a=t*0.35;
+    const fx=j.fall?j.fall.rider.root.position.x:mid;
+    cx=fx+Math.sin(a)*4.2; cy=1.6; cz=Math.cos(a)*4.2; lx=fx; ly=1.0;
+  }
+  camTmp.set(cx,cy,cz);
+  camera.position.lerp(camTmp,lerpK(dt,3.2));
+  shake=Math.max(0,shake-dt*1.6);
+  if(shake>0){
+    camera.position.x+=(Math.random()-.5)*shake*.2;
+    camera.position.y+=(Math.random()-.5)*shake*.15;
+  }
+  const wantFov=baseFov-shake*8;
+  if(Math.abs(camera.fov-wantFov)>0.05){ camera.fov+=(wantFov-camera.fov)*lerpK(dt,10); camera.updateProjectionMatrix(); }
+  lookTmp.set(lx,ly,0);
+  camera.lookAt(lookTmp);
+  renderer.render(duelScene,camera);
+}
+function joustLost(foeId,opts,r){
+  showPanel({
+    title:'败阵',
+    body:[r.unhorse==='p'?'长枪正中你的胸甲，你腾空离鞍，重重摔在栅栏边。侍从跑来扶你，满耳只有嗡嗡的风。':
+      '三合已毕，司仪的旗指向对面。你的枪不够正，也不够稳。'],
+    choices:[{label:'再战一场', sub:'胜负乃常事，可雪耻不可怯阵。', fx:()=>startJoust(foeId,opts)}],
+  });
+}
+
 /* ================= 事件（文案与 2D 版一致） ================= */
 const EVENTS={
   village(){
@@ -1249,10 +1559,16 @@ function intelOffer(foeId,next){
 function round1Intro(){
   intelOffer('talbot',()=>{
     showPanel({title:'第一阵 · 红野猪',
-      body:['对面是<em>塔尔博</em>，诨号红野猪——三届大会靠蛮力打进过终阵的莽汉。',
-        '他掂着钝剑，隔着场子冲你咧嘴。'],
-      choices:[{label:'入场', fx:()=>{
-        startDuel('talbot',{title:'第一阵', roundName:'第一阵 · 钝剑', onWin:()=>tourneyYield('talbot',round2Intro)});
+      body:['依大会规程，第一阵为<em>马上长枪</em>，三合定胜负：中盾一分，中胸两分，中盔三分——<em>坠马立判</em>。',
+        '对面是<em>塔尔博</em>，诨号红野猪——三届大会靠蛮力打进过终阵的莽汉。他已跨在马上，长枪拄地，隔着栅栏冲你咧嘴。'],
+      choices:[{label:'上马入场', fx:()=>{
+        const opts={passes:3, roundName:'第一阵 · 马上长枪', onDone:r=>{
+          if(r.winner==='p'){
+            G.flags.talbotUnhorsed=r.unhorse==='e';
+            tourneyYield('talbot',round2Intro);
+          } else joustLost('talbot',opts,r);
+        }};
+        startJoust('talbot',opts);
       }}]});
   });
 }
@@ -1277,7 +1593,7 @@ function finalIntro(){
       choices:[
         {label:'应下利剑', sub:'生死各安天命。', fx:()=>{
           G.flags.sharpFinal=true; deed('终阵应利剑之约');
-          startDuel('belloc',{title:'终阵 · 利剑', roundName:'终阵 · 利剑', onWin:()=>tourneyYield('belloc',finale)});
+          bellocJoustThenSword({opts:{title:'终阵 · 利剑', roundName:'终阵 · 利剑', onWin:()=>tourneyYield('belloc',finale)}});
         }},
         {label:'请司仪依古礼断之', sub:'比武之礼，不为一人而改。', fx:()=>{
           G.v.li++; G.v.zhi++; deed('终阵守古礼，不逞血气');
@@ -1285,19 +1601,45 @@ function finalIntro(){
             body:['司仪官起身，一字一句："圣奥仑之会，行钝剑之礼，<em>百年未改</em>。"',
               '男爵冷笑一声接过钝剑。他的握法告诉你：他打算把钝剑抡出利剑的分量。'],
             choices:[{label:'入场', fx:()=>{
-              startDuel('belloc',{title:'终阵', roundName:'终阵 · 钝剑', onWin:()=>tourneyYield('belloc',finale)});
-              duel.cfg.aggr*=1.3; duel.cfg.dmg=26;
+              bellocJoustThenSword({bluntBoost:true, opts:{title:'终阵', roundName:'终阵 · 钝剑', onWin:()=>tourneyYield('belloc',finale)}});
             }}]});
         }},
       ]});
   });
+}
+function bellocJoustThenSword(mods){
+  showPanel({title:'终阵 · 先枪后剑',
+    body:['依大会古例，终阵先行<em>马上一合</em>，再下马以剑决胜。马上的胜负不终结比试，却决定步战的先手气势。',
+      '号角响了。贝洛克已在栅栏那头——黑马黑甲，枪尖不动如塔。'],
+    choices:[{label:'上马', fx:()=>{
+      startJoust('belloc',{passes:1, roundName:'终阵 · 马上一合', onDone:r=>{
+        let pAdj=0,eAdj=0,flavor;
+        if(r.unhorse==='e'){ eAdj=-55; deed('马上一合挑黑塔于马下');
+          flavor='你的枪正得没有一丝偏差——<em>贝洛克被干净利落地挑下马来</em>。满场哗然：黑塔倒了。他起身时甲叶上全是土。步战于他，已是背水。'; }
+        else if(r.unhorse==='p'){ pAdj=-30;
+          flavor='他的枪快得看不清。你腾空离鞍，摔在土里，耳边全是嗡嗡的风。侍从扶你起身——剑还在，比试还没有完。'; }
+        else if(r.winner==='p'){ eAdj=-25;
+          flavor='两枪同时命中，你的更正。贝洛克下马时把断枪掷在地上——先手之势，在你。'; }
+        else if(r.winner==='e'){ pAdj=-20;
+          flavor='他的枪更快更准。你的胸甲凹了一块，喘息未定，便要步战。'; }
+        else{ flavor='两枪俱空，不分高下。全场屏息，看你们各自下马，拔剑。'; }
+        showPanel({title:'下马 · 拔剑', body:[flavor], choices:[{label:'步战开始', fx:()=>{
+          startDuel('belloc', mods.opts);
+          if(mods.bluntBoost){ duel.cfg.aggr*=1.3; duel.cfg.dmg=26; }
+          duel.p.resolve=Math.max(20,100+pAdj);
+          duel.e.resolve=Math.max(30,duel.e.resolveMax+eAdj);
+        }}]});
+      }});
+    }}]});
 }
 function tourneyYield(foeId,next){
   const sharp=foeId==='belloc'&&G.flags.sharpFinal;
   const names={talbot:'塔尔博',edmund:'埃德蒙爵士',belloc:'贝洛克男爵'};
   const nm=names[foeId];
   const body={
-    talbot:['塔尔博单膝砸在土里，钝剑脱手。他喘得像头真野猪，半晌，闷声道："……你赢了。"'],
+    talbot:[G.flags.talbotUnhorsed?
+      '第三合未到，塔尔博已被你一枪挑离鞍桥，摔在栅栏边半天没爬起来。他坐在土里摘了盔，喘得像头真野猪，半晌，闷声道："……好枪。"':
+      '三合已毕，司仪举旗向你。塔尔博摘下头盔，啐了口唾沫，却咧嘴笑了："痛快！多少年没挨过这么正的一枪了。"'],
     edmund:['埃德蒙爵士缓缓收剑归鞘，摘下头盔。白发汗湿。"漂亮的虚招。"老骑士说，"三十年没人这么骗过我了。"'],
     belloc:[sharp?'利剑抵在喉甲之前，贝洛克僵立不动。满场屏息——谁都看得见，这一剑收与不收，全在你。':
       '贝洛克的钝剑落了地。黑塔倾颓，单膝点尘。全场诸侯都站了起来。'],
@@ -1585,6 +1927,7 @@ function loop(){
   const t=clock.elapsedTime;
   if(G.scene==='map'){ if(!panelOpen) tickMap(dt); renderMap(dt,t); }
   else if(G.scene==='duel'){ if(!panelOpen) tickDuel(dt); renderDuel(dt,t); }
+  else if(G.scene==='joust'){ if(!panelOpen) tickJoust(dt); renderJoust(dt,t); }
   else if(G.scene==='finale'){ renderFinale(dt,t); }
   else renderTitle(dt,t);
   clearPressed();
@@ -1592,7 +1935,9 @@ function loop(){
 }
 loop();
 /* 测试钩子 */
-window.__DBG={G, player, LOCS, getDuel:()=>duel, startDuel, EVENTS, finale, shieldScreen, endDuelToMap};
+window.__DBG={G, player, LOCS, getDuel:()=>duel, getJoust:()=>joust, startDuel, startJoust,
+  forceJoust:w=>{ if(joust) joust._force=w?'p':'e'; },
+  EVENTS, finale, shieldScreen, endDuelToMap};
 /* 模型就绪后才可启程 */
 const startbtn=$('#startbtn');
 startbtn.disabled=true; startbtn.textContent='铸　剑　中　…'; startbtn.style.opacity=.55;

@@ -101,6 +101,22 @@
     border:1px solid var(--gold); cursor:pointer; transition:background .2s}
   #title button:hover,#title button:focus-visible{background:rgba(201,162,39,.3); color:var(--ivory)}
   #title button:focus-visible{outline:1px solid var(--gold); outline-offset:3px}
+  /* ---------- 长枪瞄准标尺 ---------- */
+  #jgauge{position:fixed; right:36px; top:50%; transform:translateY(-50%); width:52px; height:300px;
+    z-index:11; display:none; pointer-events:none; border:1px solid var(--panel-edge);
+    background:rgba(14,11,8,.55); backdrop-filter:blur(2px)}
+  #jgauge.braced{border-color:var(--gold); box-shadow:0 0 14px rgba(201,162,39,.45)}
+  .jzone{position:absolute; left:0; right:0; display:flex; align-items:center; justify-content:center;
+    color:var(--ivory-dim); font-size:13px; letter-spacing:.25em; text-indent:.25em;
+    border-top:1px dashed rgba(201,162,39,.4); border-bottom:1px dashed rgba(201,162,39,.4)}
+  .jzone b{color:var(--gold); font-weight:600; font-size:11px; margin-left:2px; letter-spacing:0; text-indent:0}
+  #jz-helm{top:13%; height:24%}
+  #jz-chest{top:43%; height:24%}
+  #jz-shield{top:73%; height:24%}
+  #jmark{position:absolute; left:-16px; width:0; height:0; border:7px solid transparent;
+    border-left:13px solid var(--ivory); margin-top:-7px}
+  #jgauge.braced #jmark{border-left-color:var(--gold)}
+  #fade{position:fixed; inset:0; background:#000; opacity:0; transition:opacity .3s; pointer-events:none; z-index:45}
   /* ---------- touch ---------- */
   #touch{position:fixed; inset:0; z-index:30; display:none; pointer-events:none}
   body.touch #touch{display:block}
@@ -133,6 +149,13 @@
 <div id="roundname"></div>
 <button id="mutebtn" title="声音开关" aria-label="声音开关">♪</button>
 <div id="banner"></div>
+<div id="jgauge">
+  <div class="jzone" id="jz-helm">盔<b>3</b></div>
+  <div class="jzone" id="jz-chest">胸<b>2</b></div>
+  <div class="jzone" id="jz-shield">盾<b>1</b></div>
+  <div id="jmark"></div>
+</div>
+<div id="fade"></div>
 <div id="salutetip"></div>
 <div id="caption"><span class="inner"></span></div>
 <div id="hint"></div>
