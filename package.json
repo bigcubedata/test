@@ -1,0 +1,27 @@
+{
+  "name": "test",
+  "version": "1.0.0",
+  "description": "以儒家君子之德重铸骑士精神的中世纪游侠骑士游戏。P0 原型。",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bigcubedata/test.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/bigcubedata/test/issues"
+  },
+  "homepage": "https://github.com/bigcubedata/test#readme",
+  "dependencies": {
+    "esbuild": "^0.28.1",
+    "three": "^0.170.0"
+  }
+}
