@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>君子之盾</title>
+<style>
+  :root{
+    --parchment:#E8DCC3; --parchment-deep:#DECfa9; --ink:#2B2118; --ink-soft:#4A3D2E;
+    --vermilion:#A63A2B; --indigo:#3A4A5A; --gold:#B8863B; --green:#5A6B4D;
+    --font-kai:"Kaiti SC","STKaiti","KaiTi","AR PL KaitiM GB","TW-Kai","Noto Serif CJK SC","Source Han Serif SC","Songti SC",serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:#1E1812; display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-kai); color:var(--ink); overflow:hidden;
+    -webkit-user-select:none; user-select:none; touch-action:manipulation;
+  }
+  #stage{position:relative; width:960px; height:600px; max-width:100vw; max-height:100vh;
+    transform-origin:center center; box-shadow:0 0 60px rgba(0,0,0,.6)}
+  canvas{display:block; background:var(--parchment)}
+  /* ---------- HUD ---------- */
+  #hud{position:absolute; top:20px; left:24px; right:68px; display:flex; justify-content:space-between;
+    pointer-events:none; font-size:16px; color:var(--ink-soft); letter-spacing:.06em}
+  #hud .chip{background:rgba(232,220,195,.85); border:1.5px solid var(--ink); padding:2px 12px;
+    border-radius:2px; box-shadow:2px 2px 0 rgba(43,33,24,.25)}
+  #mutebtn{position:absolute; top:18px; right:20px; z-index:40; width:34px; height:34px; font-size:16px;
+    background:rgba(232,220,195,.85); border:1.5px solid var(--ink); border-radius:2px; cursor:pointer;
+    font-family:var(--font-kai); color:var(--ink)}
+  #mutebtn:focus-visible{outline:2px solid var(--vermilion); outline-offset:2px}
+  /* ---------- banner & caption ---------- */
+  #banner{position:absolute; top:34%; left:0; right:0; text-align:center; pointer-events:none;
+    font-size:44px; letter-spacing:.35em; text-indent:.35em; color:var(--vermilion);
+    text-shadow:1px 1px 0 rgba(232,220,195,.9); opacity:0; transition:opacity .4s}
+  #caption{position:absolute; bottom:64px; left:0; right:0; text-align:center; pointer-events:none;
+    font-size:18px; color:var(--ink); opacity:0; transition:opacity .35s; padding:0 60px; line-height:1.7}
+  #caption .inner{display:inline-block; background:rgba(232,220,195,.92); border:1px solid var(--ink-soft);
+    padding:6px 20px; box-shadow:3px 3px 0 rgba(43,33,24,.2)}
+  #hint{position:absolute; bottom:10px; left:0; right:0; text-align:center; pointer-events:none;
+    font-size:13.5px; color:var(--ink-soft); opacity:.85; letter-spacing:.04em}
+  /* ---------- overlay panel ---------- */
+  #overlay{position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(30,24,18,.45); z-index:50}
+  #overlay.show{display:flex}
+  #overlay.side{justify-content:flex-end; padding-right:34px; background:rgba(30,24,18,.12)}
+  #overlay.side .panel{width:470px; max-height:92%}
+  #overlay.side .panel p{font-size:15px; line-height:1.75; margin-bottom:8px}
+  .panel{width:640px; max-width:92%; max-height:88%; overflow-y:auto; background:var(--parchment);
+    border:2px solid var(--ink); box-shadow:0 0 0 6px var(--parchment), 0 0 0 7.5px var(--ink), 8px 10px 0 rgba(0,0,0,.35);
+    padding:30px 38px 26px}
+  .panel h2{font-size:25px; letter-spacing:.2em; color:var(--ink); margin-bottom:4px; font-weight:600;
+    text-wrap:balance}
+  .panel h2::before{content:"❖ "; color:var(--vermilion); letter-spacing:0}
+  .panel .rule{height:2px; background:var(--ink); margin:10px 0 16px; position:relative}
+  .panel .rule::after{content:""; position:absolute; right:0; top:-3px; width:8px; height:8px;
+    background:var(--vermilion); transform:rotate(45deg)}
+  .panel p{font-size:17.5px; line-height:1.95; margin-bottom:12px; color:var(--ink)}
+  .panel p em{font-style:normal; color:var(--vermilion)}
+  .panel p.quiet{color:var(--ink-soft); font-size:15.5px}
+  .choices{display:flex; flex-direction:column; gap:10px; margin-top:20px}
+  .choices button{font-family:var(--font-kai); font-size:17.5px; text-align:left; letter-spacing:.05em;
+    background:var(--parchment); color:var(--ink); border:1.5px solid var(--ink); padding:10px 16px;
+    cursor:pointer; line-height:1.5; transition:background .12s,color .12s; border-radius:2px}
+  .choices button .sub{display:block; font-size:13.5px; color:var(--ink-soft); margin-top:2px}
+  .choices button:hover:not(:disabled), .choices button:focus-visible{background:var(--vermilion); color:var(--parchment)}
+  .choices button:hover:not(:disabled) .sub, .choices button:focus-visible .sub{color:#EED9C0}
+  .choices button:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
+  .choices button:disabled{opacity:.45; cursor:not-allowed}
+  /* ---------- title ---------- */
+  #title{position:absolute; inset:0; z-index:60; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:0; background:transparent}
+  #title h1{font-size:88px; font-weight:600; letter-spacing:.18em; text-indent:.18em; color:var(--ink);
+    text-shadow:3px 3px 0 rgba(166,58,43,.25)}
+  #title .en{font-size:15px; letter-spacing:.5em; text-indent:.5em; color:var(--ink-soft); margin-top:6px;
+    text-transform:uppercase; font-family:Georgia,"Times New Roman",serif}
+  #title .motto{margin-top:26px; font-size:18px; color:var(--ink-soft); letter-spacing:.12em}
+  #title button{margin-top:38px; font-family:var(--font-kai); font-size:22px; letter-spacing:.4em;
+    text-indent:.4em; padding:10px 42px; background:var(--vermilion); color:var(--parchment);
+    border:2px solid var(--ink); cursor:pointer; border-radius:2px; box-shadow:4px 4px 0 rgba(43,33,24,.4)}
+  #title button:hover,#title button:focus-visible{background:#8C2F22}
+  #title button:focus-visible{outline:2px solid var(--gold); outline-offset:3px}
+  /* ---------- touch controls ---------- */
+  #touch{position:absolute; inset:0; z-index:30; display:none; pointer-events:none}
+  body.touch #touch{display:block}
+  .tbtn{position:absolute; pointer-events:auto; width:58px; height:58px; border-radius:50%;
+    background:rgba(232,220,195,.55); border:1.5px solid var(--ink); color:var(--ink);
+    font-family:var(--font-kai); font-size:17px; display:flex; align-items:center; justify-content:center}
+  .tbtn:active{background:rgba(166,58,43,.75); color:var(--parchment)}
+  @media (prefers-reduced-motion: reduce){ *{transition:none !important} }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv" width="960" height="600"></canvas>
+  <div id="hud"></div>
+  <button id="mutebtn" title="声音开关" aria-label="声音开关">♪</button>
+  <div id="banner"></div>
+  <div id="caption"><span class="inner"></span></div>
+  <div id="hint"></div>
+  <div id="touch"></div>
+  <div id="overlay"><div class="panel" id="panelbox"></div></div>
+  <div id="title">
+    <h1>君子之盾</h1>
+    <div class="en">A Junzi's Shield</div>
+    <div class="motto">天下失序之时，一个人的操守还算数吗。</div>
+    <button id="startbtn">启　程</button>
+  </div>
+</div>
+<script>
+(() => {
+'use strict';
+/* ================= 基础 ================= */
+const W=960, H=600;
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+const C={parch:'#E8DCC3', parchDeep:'#DECFA9', ink:'#2B2118', inkSoft:'#4A3D2E',
+  verm:'#A63A2B', indigo:'#3A4A5A', gold:'#B8863B', green:'#5A6B4D', river:'#8CA3AE', road:'#C9B189'};
+const $=s=>document.querySelector(s);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const dist=(a,b,c,d)=>Math.hypot(a-c,b-d);
+
+/* 适配缩放 */
+function fit(){
+  const s=Math.min(innerWidth/W, innerHeight/H, 1.4);
+  $('#stage').style.transform=`scale(${s})`;
+}
+addEventListener('resize',fit); fit();
+
+/* ================= 声音（WebAudio 简音效） ================= */
+let AC=null, muted=false;
+function ac(){ if(!AC) AC=new (window.AudioContext||window.webkitAudioContext)(); return AC; }
+function tone(f,dur,type='square',vol=0.05,slide=0){
+  if(muted) return;
+  try{
+    const a=ac(), o=a.createOscillator(), g=a.createGain();
+    o.type=type; o.frequency.value=f;
+    if(slide) o.frequency.linearRampToValueAtTime(f+slide, a.currentTime+dur);
+    g.gain.setValueAtTime(vol,a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+dur);
+    o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime+dur);
+  }catch(e){}
+}
+const sfx={
+  clang(){ tone(1750,.09,'square',.045); tone(920,.14,'sawtooth',.03,-300); },
+  hit(){ tone(150,.16,'sawtooth',.07,-60); tone(90,.2,'triangle',.06); },
+  swing(){ tone(360,.08,'sine',.03,220); },
+  shove(){ tone(120,.14,'square',.05,-40); },
+  step(){ tone(220,.03,'triangle',.015); },
+  horn(){ tone(392,.35,'sawtooth',.04); setTimeout(()=>tone(523,.55,'sawtooth',.045),240); },
+  coin(){ tone(1320,.1,'sine',.04); setTimeout(()=>tone(1760,.15,'sine',.035),70); },
+  yield_(){ tone(660,.3,'sine',.04,-160); },
+};
+$('#mutebtn').addEventListener('click',()=>{ muted=!muted; $('#mutebtn').textContent=muted?'∅':'♪'; });
+
+/* ================= 游戏状态 ================= */
+const G={
+  scene:'title',
+  v:{ren:0, yi:0, li:0, zhi:0, xin:0, shendu:0},   // 五常与慎独，永不显示数值
+  coins:8,
+  deeds:[],        // 判词素材
+  hiddenDeeds:[],  // 慎独之行，另册记之
+  stains:[],       // 污点
+  oaths:[],        // {text, kept:null|true|false}
+  flags:{},
+  round:0,
+};
+function deed(t){ G.deeds.push(t); }
+function stain(t){ G.stains.push(t); }
+
+/* ================= HUD / 文案挂件 ================= */
+function hud(){
+  const el=$('#hud');
+  if(G.scene==='map'){
+    el.innerHTML=`<span class="chip">钱袋 · ${G.coins} 银</span>
+      <span class="chip">${G.oaths.length?('誓约 · '+G.oaths.length+' 则'):'圣奥仑大会 · 三日后'}</span>`;
+  }else el.innerHTML='';
+}
+let bannerT=null;
+function banner(t,ms=1300){
+  const b=$('#banner'); b.textContent=t; b.style.opacity=1;
+  clearTimeout(bannerT); bannerT=setTimeout(()=>b.style.opacity=0,ms);
+}
+let capT=null;
+function caption(t,ms=3200){
+  const c=$('#caption'); c.querySelector('.inner').textContent=t; c.style.opacity=1;
+  clearTimeout(capT); capT=setTimeout(()=>c.style.opacity=0,ms);
+}
+function hint(t){ $('#hint').textContent=t||''; }
+
+/* ================= 面板系统 ================= */
+const overlay=$('#overlay'), panelbox=$('#panelbox');
+let panelOpen=false;
+function showPanel({title,body,choices,quiet}){
+  panelOpen=true; overlay.classList.add('show');
+  let html=`<h2>${title}</h2><div class="rule"></div>`;
+  for(const p of body) html+=`<p>${p}</p>`;
+  if(quiet) html+=`<p class="quiet">${quiet}</p>`;
+  html+=`<div class="choices"></div>`;
+  panelbox.innerHTML=html;
+  const box=panelbox.querySelector('.choices');
+  choices.forEach(c=>{
+    const b=document.createElement('button');
+    b.innerHTML=c.label+(c.sub?`<span class="sub">${c.sub}</span>`:'');
+    if(c.disabled) b.disabled=true;
+    b.addEventListener('click',()=>{ closePanel(); c.fx&&c.fx(); });
+    box.appendChild(b);
+  });
+  const first=box.querySelector('button:not(:disabled)'); first&&first.focus();
+}
+function closePanel(){ panelOpen=false; overlay.classList.remove('show'); hud(); }
+
+/* ================= 输入 ================= */
+const keys={}, pressed={};   /* keys=按住状态；pressed=单次敲击队列，每帧消费 */
+addEventListener('keydown',e=>{
+  if(panelOpen) return;
+  keys[e.code]=true;
+  if(!e.repeat) pressed[e.code]=true;
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
+});
+addEventListener('keyup',e=>keys[e.code]=false);
+function clearPressed(){ for(const k in pressed) delete pressed[k]; }
+/* 触屏 */
+const isTouch=matchMedia('(pointer: coarse)').matches||('ontouchstart' in window);
+if(isTouch){
+  document.body.classList.add('touch');
+  const defs=[
+    {t:'◀',x:24,y:H-118,k:'KeyA'},{t:'▶',x:98,y:H-118,k:'KeyD'},
+    {t:'▲',x:61,y:H-186,k:'KeyW'},{t:'▼',x:61,y:H-50,k:'KeyS'},
+    {t:'击',x:W-92,y:H-140,k:'KeyJ'},{t:'撞',x:W-164,y:H-92,k:'KeyK'},
+  ];
+  const tc=$('#touch');
+  defs.forEach(d=>{
+    const b=document.createElement('div'); b.className='tbtn'; b.textContent=d.t;
+    b.style.left=d.x+'px'; b.style.top=(d.y-58)+'px';
+    b.addEventListener('pointerdown',e=>{e.preventDefault(); keys[d.k]=true; pressed[d.k]=true;});
+    b.addEventListener('pointerup',()=>keys[d.k]=false);
+    b.addEventListener('pointerleave',()=>keys[d.k]=false);
+    tc.appendChild(b);
+  });
+}
+
+/* ================= 通用绘制 ================= */
+let speck=null;
+function parchment(){
+  ctx.fillStyle=C.parch; ctx.fillRect(0,0,W,H);
+  if(!speck){
+    speck=document.createElement('canvas'); speck.width=W; speck.height=H;
+    const s=speck.getContext('2d');
+    for(let i=0;i<900;i++){
+      s.fillStyle=`rgba(74,61,46,${0.02+Math.random()*0.05})`;
+      s.fillRect(Math.random()*W,Math.random()*H,1.6,1.6);
+    }
+    for(let i=0;i<7;i++){
+      s.fillStyle='rgba(160,130,80,0.05)';
+      s.beginPath(); s.ellipse(Math.random()*W,Math.random()*H,60+Math.random()*120,40+Math.random()*80,Math.random()*3,0,7); s.fill();
+    }
+  }
+  ctx.drawImage(speck,0,0);
+}
+function frame(){ /* 挂毯式边框 */
+  ctx.save();
+  ctx.strokeStyle=C.ink; ctx.lineWidth=3; ctx.strokeRect(6.5,6.5,W-13,H-13);
+  ctx.strokeStyle=C.verm; ctx.lineWidth=1.5; ctx.strokeRect(12.5,12.5,W-25,H-25);
+  ctx.fillStyle=C.gold;
+  for(const [x,y] of [[6,6],[W-14,6],[6,H-14],[W-14,H-14]]) ctx.fillRect(x,y,8,8);
+  ctx.restore();
+}
+function sealChar(x,y,ch,size=30,earned=true){ /* 朱砂印 */
+  ctx.save();
+  ctx.translate(x,y);
+  if(earned){
+    ctx.fillStyle=C.verm;
+    ctx.strokeStyle=C.ink; ctx.lineWidth=2;
+    rrect(-size*0.72,-size*0.72,size*1.44,size*1.44,4); ctx.fill(); ctx.stroke();
+    ctx.fillStyle=C.parch;
+  }else{
+    ctx.strokeStyle='rgba(74,61,46,.4)'; ctx.lineWidth=1.5;
+    rrect(-size*0.72,-size*0.72,size*1.44,size*1.44,4); ctx.stroke();
+    ctx.fillStyle='rgba(74,61,46,.35)';
+  }
+  ctx.font=`600 ${size}px ${'Kaiti SC,STKaiti,KaiTi,serif'}`;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(ch,0,size*0.06);
+  ctx.restore();
+}
+function rrect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+}
+
+/* ================= 俯视行游 ================= */
+const MAP={w:1700,h:1100};
+const player={x:210,y:930,a:0,speed:175};
+const LOCS=[
+  {id:'village', x:520,y:430, r:70, name:'沙溪村', done:false},
+  {id:'forest',  x:860,y:250, r:80, name:'黑桦林', done:false},
+  {id:'ford',    x:1030,y:780,r:70, name:'苇渡口', done:false},
+  {id:'field',   x:1450,y:330,r:85, name:'圣奥仑比武场', done:false},
+];
+const TREES=[]; { let seed=7; const rnd=()=>{seed=(seed*16807)%2147483647; return seed/2147483647;};
+  for(let i=0;i<46;i++) TREES.push({x:700+rnd()*380,y:120+rnd()*300,s:14+rnd()*14});
+  for(let i=0;i<20;i++) TREES.push({x:120+rnd()*350,y:120+rnd()*300,s:12+rnd()*16});
+}
+const roadPts=[[210,930],[380,760],[520,470],[700,380],[860,300],[1030,740],[1240,560],[1450,370]];
+
+function drawMap(){
+  parchment();
+  const camX=clamp(player.x-W/2,0,MAP.w-W), camY=clamp(player.y-H/2,0,MAP.h-H);
+  ctx.save(); ctx.translate(-camX,-camY);
+  /* 河 */
+  ctx.strokeStyle=C.river; ctx.lineWidth=46; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(760,1100); ctx.quadraticCurveTo(980,830,1120,660);
+  ctx.quadraticCurveTo(1260,480,1700,430); ctx.stroke();
+  ctx.strokeStyle='rgba(58,74,90,.5)'; ctx.lineWidth=2;
+  for(const off of [-12,2,14]){
+    ctx.beginPath(); ctx.moveTo(760,1100+off); ctx.quadraticCurveTo(980,830+off,1120,660+off);
+    ctx.quadraticCurveTo(1260,480+off,1700,430+off); ctx.stroke();
+  }
+  /* 渡口桥板 */
+  ctx.fillStyle=C.road; ctx.save(); ctx.translate(1035,762); ctx.rotate(-0.7);
+  ctx.fillRect(-16,-46,32,92); ctx.strokeStyle=C.ink; ctx.lineWidth=2; ctx.strokeRect(-16,-46,32,92); ctx.restore();
+  /* 路 */
+  ctx.strokeStyle=C.road; ctx.lineWidth=26; ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.beginPath(); ctx.moveTo(roadPts[0][0],roadPts[0][1]);
+  for(const p of roadPts.slice(1)) ctx.lineTo(p[0],p[1]); ctx.stroke();
+  ctx.setLineDash([10,14]); ctx.strokeStyle='rgba(74,61,46,.5)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(roadPts[0][0],roadPts[0][1]);
+  for(const p of roadPts.slice(1)) ctx.lineTo(p[0],p[1]); ctx.stroke(); ctx.setLineDash([]);
+  /* 树 */
+  for(const t of TREES){
+    ctx.fillStyle=C.green; ctx.strokeStyle=C.ink; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(t.x,t.y,t.s,0,7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='rgba(43,33,24,.55)'; ctx.fillRect(t.x-2,t.y+t.s-4,4,8);
+  }
+  /* 村庄 */
+  drawVillage(470,400);
+  /* 营地 */
+  drawTent(180,950);
+  /* 比武场 */
+  drawField(1450,330);
+  /* 信使（渡口，未处理时可见） */
+  const ford=LOCS.find(l=>l.id==='ford');
+  if(!ford.done){
+    ctx.save(); ctx.translate(1000,820); ctx.rotate(0.9);
+    ctx.fillStyle=C.indigo; rrect(-6,-16,12,32,5); ctx.fill();
+    ctx.strokeStyle=C.ink; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0,-22,6,0,7); ctx.fillStyle='#C9A227'; ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+  /* 地名 */
+  ctx.font='600 19px '+'Kaiti SC,STKaiti,KaiTi,serif';
+  ctx.textAlign='center'; ctx.fillStyle=C.inkSoft;
+  for(const l of LOCS){
+    ctx.fillText(l.name,l.x,l.y-l.r-10);
+    if(!l.done && l.id!=='field'){
+      ctx.fillStyle=C.verm; ctx.fillText('·',l.x,l.y-l.r+8); ctx.fillStyle=C.inkSoft;
+    }
+  }
+  /* 玩家（骑马俯视） */
+  ctx.save(); ctx.translate(player.x,player.y); ctx.rotate(player.a);
+  ctx.fillStyle='#6B5138'; ctx.strokeStyle=C.ink; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.ellipse(0,0,26,11,0,0,7); ctx.fill(); ctx.stroke();      // 马身
+  ctx.beginPath(); ctx.ellipse(30,0,8,5,0,0,7); ctx.fill(); ctx.stroke();       // 马首
+  ctx.fillStyle=C.indigo; ctx.beginPath(); ctx.arc(-2,0,8,0,7); ctx.fill(); ctx.stroke(); // 骑者
+  ctx.fillStyle=C.gold; ctx.beginPath(); ctx.ellipse(-2,-9,7,4,0,0,7); ctx.fill(); ctx.stroke(); // 盾
+  ctx.strokeStyle=C.inkSoft; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(6,6); ctx.lineTo(46,10); ctx.stroke(); // 枪
+  ctx.restore();
+  ctx.restore();
+  /* 罗盘 */
+  ctx.save(); ctx.translate(W-58,H-58);
+  ctx.fillStyle='rgba(232,220,195,.9)'; ctx.strokeStyle=C.ink; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(0,0,26,0,7); ctx.fill(); ctx.stroke();
+  ctx.fillStyle=C.verm; ctx.beginPath(); ctx.moveTo(0,-18); ctx.lineTo(5,4); ctx.lineTo(-5,4); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=C.ink; ctx.font='11px serif'; ctx.textAlign='center'; ctx.fillText('北',0,17);
+  ctx.restore();
+  frame();
+}
+function drawVillage(x,y){
+  for(const [dx,dy] of [[0,0],[70,26],[24,64],[92,80]]){
+    ctx.save(); ctx.translate(x+dx,y+dy);
+    ctx.fillStyle=C.parchDeep; ctx.strokeStyle=C.ink; ctx.lineWidth=2;
+    ctx.fillRect(-18,-12,36,26); ctx.strokeRect(-18,-12,36,26);
+    ctx.fillStyle=C.verm; ctx.beginPath(); ctx.moveTo(-22,-12); ctx.lineTo(0,-30); ctx.lineTo(22,-12); ctx.closePath();
+    ctx.fill(); ctx.stroke(); ctx.restore();
+  }
+}
+function drawTent(x,y){
+  ctx.save(); ctx.translate(x,y);
+  ctx.fillStyle=C.indigo; ctx.strokeStyle=C.ink; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(-26,16); ctx.lineTo(0,-24); ctx.lineTo(26,16); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle=C.gold; ctx.beginPath(); ctx.moveTo(0,-24); ctx.lineTo(0,-38); ctx.stroke();
+  ctx.fillStyle=C.gold; ctx.beginPath(); ctx.moveTo(0,-38); ctx.lineTo(14,-33); ctx.lineTo(0,-28); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function drawField(x,y){
+  ctx.save(); ctx.translate(x,y);
+  ctx.fillStyle='rgba(184,134,59,.18)'; ctx.strokeStyle=C.ink; ctx.lineWidth=2;
+  rrect(-95,-60,190,120,8); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle=C.inkSoft; ctx.beginPath(); ctx.moveTo(-70,0); ctx.lineTo(70,0); ctx.stroke(); // 栅栏
+  for(const [px,fc] of [[-95,C.verm],[95,C.indigo]]){
+    ctx.strokeStyle=C.ink; ctx.beginPath(); ctx.moveTo(px,-60); ctx.lineTo(px,-100); ctx.stroke();
+    ctx.fillStyle=fc; ctx.beginPath(); ctx.moveTo(px,-100); ctx.lineTo(px+26,-92); ctx.lineTo(px,-84);
+    ctx.closePath(); ctx.fill(); ctx.strokeStyle=C.ink; ctx.stroke();
+  }
+  ctx.restore();
+}
+function tickMap(dt){
+  let dx=0,dy=0;
+  if(keys.ArrowLeft||keys.KeyA) dx-=1;
+  if(keys.ArrowRight||keys.KeyD) dx+=1;
+  if(keys.ArrowUp||keys.KeyW) dy-=1;
+  if(keys.ArrowDown||keys.KeyS) dy+=1;
+  if(dx||dy){
+    const n=Math.hypot(dx,dy);
+    player.x=clamp(player.x+dx/n*player.speed*dt, 30, MAP.w-30);
+    player.y=clamp(player.y+dy/n*player.speed*dt, 30, MAP.h-30);
+    player.a=Math.atan2(dy,dx);
+  }
+  for(const l of LOCS){
+    if(!l.done && dist(player.x,player.y,l.x,l.y)<l.r){
+      l.done=true; EVENTS[l.id]();
+      break;
+    }
+  }
+}
+
+/* ================= 侧视决斗 ================= */
+const STANCES=['上段','中段','下段'];
+const GROUND=468;
+let duel=null;
+function mkFighter(o){
+  return Object.assign({
+    x:0, face:1, stance:1, resolve:100, resolveMax:100, stam:100,
+    state:'idle', t:0, strikeStance:1, feinted:false,
+    shoveCd:0, atkCd:0, stanceCd:0, exhaust:0, blockFlash:0, hurtFlash:0, swingPh:0,
+  },o);
+}
+const FOES={
+  brigand:{name:'林中盗匪', epithet:'亡命之徒', color:'#5B5B4A', dmg:20, resolveMax:80,
+    windup:470, reaction:520, reactP:.35, aggr:1.15, feintP:.05, counter:false, speed:150,
+    stanceW:[0.35,0.4,0.25], sharp:true,
+    habit:'出手毫无章法，却下手极狠。'},
+  talbot:{name:'塔尔博', epithet:'红野猪', color:'#8E3B2E', dmg:22, resolveMax:100,
+    windup:520, reaction:700, reactP:.28, aggr:1.25, feintP:.04, counter:false, speed:165,
+    stanceW:[0.62,0.25,0.13], sharp:false,
+    habit:'出手必是大开大合的上段劈砍，格挡却慢。举剑时看他的肩。'},
+  edmund:{name:'埃德蒙爵士', epithet:'灰鹭', color:'#4A5A66', dmg:22, resolveMax:105,
+    windup:430, reaction:230, reactP:.85, aggr:.45, feintP:.10, counter:true, speed:140,
+    stanceW:[0.3,0.4,0.3], sharp:false,
+    habit:'从不先动手。他盯着你的起手式格挡，格开便还击。唯有出剑途中变势的虚招能骗过他。'},
+  belloc:{name:'贝洛克男爵', epithet:'黑塔', color:'#2E2A33', dmg:24, resolveMax:120,
+    windup:390, reaction:280, reactP:.72, aggr:.95, feintP:.38, counter:true, speed:170,
+    stanceW:[0.33,0.34,0.33], sharp:false,
+    habit:'他自己就惯用虚招，且专挑你力竭时抢攻。稳住体势，后发制人。'},
+};
+function startDuel(foeId,opts){
+  const cfg=FOES[foeId];
+  const intel=G.flags['intel_'+foeId];
+  duel={
+    cfg, opts, foeId,
+    p:mkFighter({x:290,face:1,color:C.indigo}),
+    e:mkFighter({x:670,face:-1,color:cfg.color,resolve:cfg.resolveMax,resolveMax:cfg.resolveMax}),
+    phase:'salute', phaseT:3.4, saluted:false, foeSaluteResp:false,
+    intel, over:false, aiThink:0, aiReactT:-1, aiPlan:null,
+  };
+  if(opts.pHandicap) duel.p.resolve=100-opts.pHandicap;
+  G.scene='duel'; hud();
+  hint('A/D 或 ←→ 移动 · W/S 或 ↑↓ 换势 · J/空格 出剑 · K 撞盾 · 出剑途中换势即是虚招');
+  banner(opts.title||'决斗',1500);
+  if(intel) setTimeout(()=>caption('老侍从之言：'+cfg.habit,5200),1600);
+  sfx.horn();
+}
+/* --- 决斗绘制 --- */
+function drawDuel(dt){
+  parchment();
+  /* 看台与帷幔（让开顶部 HUD 区） */
+  ctx.fillStyle='rgba(184,134,59,.14)'; ctx.fillRect(0,150,W,104);
+  ctx.strokeStyle='rgba(74,61,46,.65)'; ctx.lineWidth=1.5;
+  for(let r=0;r<3;r++){
+    ctx.beginPath();
+    for(let x=40;x<W-30;x+=26){
+      ctx.moveTo(x,180+r*28); ctx.arc(x,180+r*28,7,Math.PI,0,false);
+    }
+    ctx.stroke();
+  }
+  ctx.strokeStyle=C.inkSoft; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(30,138); ctx.lineTo(W-30,138); ctx.stroke(); /* 旗绳 */
+  for(let i=0;i<11;i++){ /* 彩旗 */
+    const x=64+i*84;
+    ctx.fillStyle=i%2?C.verm:C.indigo; ctx.strokeStyle=C.ink;
+    ctx.beginPath(); ctx.moveTo(x,138); ctx.lineTo(x+18,138); ctx.lineTo(x+9,156); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+  }
+  /* 地面 */
+  ctx.strokeStyle=C.ink; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(30,GROUND+42); ctx.lineTo(W-30,GROUND+42); ctx.stroke();
+  ctx.fillStyle='rgba(74,61,46,.12)'; ctx.fillRect(30,GROUND+42,W-60,40);
+  if(duel){
+    drawKnight(duel.p, false);
+    drawKnight(duel.e, true);
+    drawDuelHud();
+    if(duel.phase==='salute'){
+      ctx.fillStyle=C.verm; ctx.font='600 24px Kaiti SC,STKaiti,KaiTi,serif'; ctx.textAlign='center';
+      ctx.fillText(duel.saluted?'礼毕':'按 K 向对手行礼（也可不行）', W/2, 246);
+      ctx.fillStyle=C.inkSoft; ctx.font='15px Kaiti SC,STKaiti,KaiTi,serif';
+      ctx.fillText('开赛于 '+Math.ceil(duel.phaseT)+'…', W/2, 274);
+    }
+  }
+  frame();
+}
+function drawKnight(f,isFoe){
+  const x=f.x, y=GROUND, s=f.face;
+  ctx.save(); ctx.translate(x,y+42); ctx.scale(s*1.32,1.32); ctx.translate(0,-40);
+  if(f.hurtFlash>0) ctx.globalAlpha=0.55+0.45*Math.sin(f.hurtFlash*60);
+  const kneel=f.state==='yield';
+  const lean=f.state==='stagger'?-8:(f.state==='windup'?-4:(f.state==='strike'?7:0));
+  /* 腿 */
+  ctx.strokeStyle=C.ink; ctx.lineWidth=5; ctx.lineCap='round';
+  if(kneel){
+    ctx.beginPath(); ctx.moveTo(-4,4); ctx.lineTo(-12,26); ctx.lineTo(4,30); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(6,6); ctx.lineTo(14,40); ctx.stroke();
+  }else{
+    ctx.beginPath(); ctx.moveTo(-3,6); ctx.lineTo(-13,40); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(5,6); ctx.lineTo(15,40); ctx.stroke();
+  }
+  /* 躯干（罩袍） */
+  const ty=kneel?-26:-40;
+  ctx.fillStyle=f.color; ctx.strokeStyle=C.ink; ctx.lineWidth=2.5;
+  ctx.save(); ctx.rotate(lean*Math.PI/180);
+  ctx.beginPath(); ctx.moveTo(-11,ty); ctx.lineTo(11,ty); ctx.lineTo(14,8); ctx.lineTo(-14,8);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  /* 头盔 */
+  ctx.fillStyle='#B9AE99';
+  ctx.beginPath(); ctx.arc(0,ty-12,10.5,0,7); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle=C.ink; ctx.lineWidth=1.8;
+  ctx.beginPath(); ctx.moveTo(2,ty-16); ctx.lineTo(11,ty-13); ctx.stroke(); /* 目缝 */
+  /* 盾（前手） */
+  if(f.state!=='yield'){
+    ctx.fillStyle=isFoe?f.color:C.gold; ctx.strokeStyle=C.ink; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.moveTo(16,ty+6); ctx.quadraticCurveTo(28,ty+8,27,ty+26);
+    ctx.quadraticCurveTo(26,ty+40,16,ty+46); ctx.quadraticCurveTo(8,ty+40,8,ty+26);
+    ctx.quadraticCurveTo(8,ty+8,16,ty+6); ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+  /* 剑（后手，角度依架势） */
+  const stanceA=[-1.15,-0.35,0.42][f.stance];
+  let a=stanceA, reachMul=1;
+  if(f.state==='windup'){ a=stanceA-0.85; }
+  else if(f.state==='strike'){ a=stanceA+0.55; reachMul=1.35; }
+  else if(f.state==='yield'){ a=1.35; }
+  if(f.phaseSalute){ a=-1.5; }
+  ctx.save(); ctx.translate(-6,ty+14); ctx.rotate(a);
+  ctx.strokeStyle=C.ink; ctx.lineWidth=3.2;
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(44*reachMul,0); ctx.stroke();
+  ctx.strokeStyle=f.state==='windup'?C.verm:C.inkSoft; ctx.lineWidth=2.5;
+  ctx.beginPath(); ctx.moveTo(8,-6); ctx.lineTo(8,6); ctx.stroke();  /* 护手 */
+  ctx.restore();
+  ctx.restore(); /* lean */
+  if(f.blockFlash>0){
+    ctx.strokeStyle=C.gold; ctx.lineWidth=3; ctx.globalAlpha=Math.min(1,f.blockFlash*4);
+    ctx.beginPath(); ctx.arc(10,ty+22,26,0,7); ctx.stroke(); ctx.globalAlpha=1;
+  }
+  /* 力竭 */
+  if(f.exhaust>0){
+    ctx.fillStyle=C.verm; ctx.font='600 16px Kaiti SC,serif'; ctx.textAlign='center';
+    ctx.save(); ctx.scale(s,1); ctx.fillText('力竭',0,ty-34); ctx.restore();
+  }
+  ctx.restore();
+}
+function bar(x,y,w,val,max,color,label,alignRight){
+  ctx.save();
+  ctx.fillStyle='rgba(43,33,24,.15)'; ctx.fillRect(x,y,w,10);
+  const fw=w*clamp(val/max,0,1);
+  ctx.fillStyle=color; ctx.fillRect(alignRight?x+w-fw:x,y,fw,10);
+  ctx.strokeStyle=C.ink; ctx.lineWidth=1.5; ctx.strokeRect(x,y,w,10);
+  ctx.fillStyle=C.inkSoft; ctx.font='12.5px Kaiti SC,serif'; ctx.textAlign=alignRight?'right':'left';
+  ctx.fillText(label, alignRight?x+w:x, y-4);
+  ctx.restore();
+}
+function drawDuelHud(){
+  const d=duel;
+  ctx.font='600 19px Kaiti SC,STKaiti,KaiTi,serif'; ctx.fillStyle=C.ink;
+  ctx.textAlign='left'; ctx.fillText('你',40,44);
+  ctx.textAlign='right'; ctx.fillText(`${d.cfg.name} · ${d.cfg.epithet}`,W-72,44);
+  bar(40,58,250,d.p.resolve,d.p.resolveMax,C.gold,'气势');
+  bar(40,84,250,d.p.stam,100,C.indigo,'体势');
+  bar(W-322,58,250,d.e.resolve,d.e.resolveMax,C.gold,'气势',true);
+  bar(W-322,84,250,d.e.stam,100,C.indigo,'体势',true);
+  ctx.fillStyle=C.verm; ctx.font='600 17px Kaiti SC,serif'; ctx.textAlign='center';
+  ctx.fillText(d.opts.roundName||'', W/2, 44);
+  /* 架势指示 */
+  ctx.font='15px Kaiti SC,serif'; ctx.fillStyle=C.inkSoft;
+  ctx.textAlign='left'; ctx.fillText('架势 · '+STANCES[d.p.stance], 40, 112);
+  ctx.textAlign='right'; ctx.fillText(STANCES[d.e.stance]+' · 架势', W-72, 112);
+}
+/* --- 决斗逻辑 --- */
+function fTick(f,dt){
+  f.t-=dt; f.shoveCd-=dt; f.atkCd-=dt; f.stanceCd-=dt;
+  f.blockFlash-=dt; f.hurtFlash-=dt;
+  if(f.exhaust>0){ f.exhaust-=dt; }
+  else f.stam=clamp(f.stam+(f.state==='idle'?16:8)*dt,0,100);
+}
+function tryAttack(f){
+  if(f.state!=='idle'||f.atkCd>0||f.exhaust>0) return false;
+  if(f.stam<24){ return false; }
+  f.stam-=24; f.state='windup'; f.strikeStance=f.stance; f.feinted=false;
+  f.t=(f===duel.p?0.36:(duel.cfg.windup+(duel.intel&&f===duel.e?140:0))/1000);
+  return true;
+}
+function tryShove(f,g){
+  if(f.state!=='idle'||f.shoveCd>0||f.exhaust>0||f.stam<20) return;
+  f.shoveCd=0.9; f.stam-=20;
+  if(Math.abs(f.x-g.x)<86 && g.state!=='stagger'){
+    if(g.state==='windup'||g.state==='idle'){
+      g.state='stagger'; g.t=0.68; sfx.shove();
+      caption2('撞盾！'+(g===duel.e?'对手趔趄了':'你被撞得趔趄'));
+    }
+  }else sfx.swing();
+}
+let cap2T=null;
+function caption2(t){ caption(t,1500); }
+function setStance(f,dir){
+  if(f.stanceCd>0||f.exhaust>0) return;
+  const ns=clamp(f.stance+dir,0,2);
+  if(ns===f.stance) return;
+  f.stance=ns; f.stanceCd=0.09;
+  if(f.state==='windup'){ /* 虚招 */
+    if(f.stam>=8){ f.stam-=8; f.strikeStance=f.stance; f.feinted=true; }
+    else f.stance=f.strikeStance;
+  }
+}
+function resolveStrike(att,def,isPlayerAtt){
+  const gap=Math.abs(att.x-def.x);
+  att.state='strike'; att.t=0.09; sfx.swing();
+  if(gap>128){ return; }
+  const canBlock=(def.state==='idle'||def.state==='windup') && def.exhaust<=0 && def.state!=='stagger';
+  if(canBlock && def.stance===att.strikeStance){
+    def.stam=clamp(def.stam-10,0,100); def.blockFlash=0.3; sfx.clang();
+    att.state='recover'; att.t=0.46; att.atkCd=0.5;
+    if(!isPlayerAtt) duel.pJustBlocked=true; else duel.eJustBlocked=true;
+    return;
+  }
+  const dmg=isPlayerAtt?22:duel.cfg.dmg;
+  def.resolve-=dmg; def.hurtFlash=0.35; sfx.hit();
+  def.x=clamp(def.x+(def.x>att.x?26:-26),80,W-80);
+  att.state='recover'; att.t=0.3; att.atkCd=0.34;
+  if(def.state==='windup') def.state='idle';
+  if(def.resolve<=0){
+    def.resolve=0;
+    if(def===duel.e){ def.state='yield'; duel.over=true; sfx.yield_(); setTimeout(()=>duelWon(),900); }
+    else { duel.over=true; setTimeout(()=>duelLost(),700); }
+  }
+}
+function tickDuel(dt){
+  const d=duel; if(!d) return;
+  const p=d.p, e=d.e;
+  if(d.phase==='salute'){
+    d.phaseT-=dt;
+    p.phaseSalute=d.saluted;
+    if((pressed.KeyK||pressed.KeyB) && !d.saluted){
+      d.saluted=true; G.v.li++;
+      const resp={brigand:'盗匪愣了一下，随即狞笑。',
+        talbot:'塔尔博啐了一口，没有还礼。',
+        edmund:'埃德蒙爵士郑重举剑还礼。',
+        belloc:G.flags.baronGrudge?'贝洛克冷冷道："沙溪村的多事骑士。"草草还了半礼。':'贝洛克微一颔首，还礼。'}[d.foeId];
+      caption(resp,3000);
+      if(d.foeId==='edmund') e.phaseSalute=true;
+      deed_once('salute','临阵向对手行礼，不失骑士之仪');
+    }
+    if(d.phaseT<=0){
+      d.phase='fight'; p.phaseSalute=false; e.phaseSalute=false;
+      banner('比武开始',1000);
+    }
+    return;
+  }
+  if(d.over){ fTick(p,dt); fTick(e,dt); return; }
+  fTick(p,dt); fTick(e,dt);
+  /* 玩家操控 */
+  if(p.state==='idle'&&p.exhaust<=0){
+    let mv=0;
+    if(keys.ArrowLeft||keys.KeyA) mv-=1;
+    if(keys.ArrowRight||keys.KeyD) mv+=1;
+    if(mv) p.x=clamp(p.x+mv*170*dt,80,e.x-52);
+  }
+  if(pressed.ArrowUp||pressed.KeyW) setStance(p,-1);
+  if(pressed.ArrowDown||pressed.KeyS) setStance(p,1);
+  if(pressed.KeyJ||pressed.Space) tryAttack(p);
+  if(pressed.KeyK||pressed.KeyB) tryShove(p,e);
+  if(p.stam<=0&&p.exhaust<=0&&p.state==='idle'){ p.exhaust=1.35; caption2('你力竭了——喘口气！'); }
+  /* 玩家攻击结算 */
+  if(p.state==='windup'&&p.t<=0) resolveStrike(p,e,true);
+  else if(p.state==='strike'&&p.t<=0){ p.state='recover'; }
+  else if(p.state==='recover'&&p.t<=0) p.state='idle';
+  if(p.state==='stagger'&&p.t<=0) p.state='idle';
+  /* AI */
+  aiTick(dt); aiMove(dt);
+  if(e.state==='windup'&&e.t<=0) resolveStrike(e,p,false);
+  else if(e.state==='strike'&&e.t<=0) e.state='recover';
+  else if(e.state==='recover'&&e.t<=0) e.state='idle';
+  if(e.state==='stagger'&&e.t<=0) e.state='idle';
+  if(e.stam<=0&&e.exhaust<=0&&e.state==='idle') e.exhaust=1.35;
+}
+function aiTick(dt){
+  const d=duel, cfg=d.cfg, e=d.e, p=d.p;
+  const gap=Math.abs(e.x-p.x);
+  /* 反应格挡：读玩家起手式（每次起手只判定一次） */
+  if(p.state==='windup'){
+    if(d.aiReactT<0) d.aiReactT=cfg.reaction/1000;
+    if(d.aiReactT<900){
+      d.aiReactT-=dt;
+      if(d.aiReactT<=0){
+        if(e.state==='idle' && Math.random()<cfg.reactP) e.stance=p.stance;
+        d.aiReactT=999; /* 本次起手已判定 */
+      }
+    }
+  } else d.aiReactT=-1;
+  /* 还击 */
+  if(d.eJustBlocked && cfg.counter && e.state==='idle'){
+    d.eJustBlocked=false;
+    if(e.stam>30){ tryAttack(e); return; }
+  }
+  d.aiThink-=dt;
+  if(e.state==='windup'){
+    /* 虚招 */
+    if(!e.feinted && e.t<cfg.windup/2000 && Math.random()<cfg.feintP){
+      const ns=[0,1,2].filter(s=>s!==e.stance)[Math.random()<0.5?0:1];
+      e.stance=ns; e.strikeStance=ns; e.feinted=true;
+    }
+    return;
+  }
+  if(e.state!=='idle'||e.exhaust>0) return;
+  if(d.aiThink>0) return;
+  d.aiThink=0.12+Math.random()*0.18;
+  const wantGap=105;
+  /* 追击力竭的玩家 */
+  const punish=cfg.name==='贝洛克男爵'&&p.exhaust>0;
+  const aggr=cfg.aggr*(punish?2.2:1);
+  if(gap>wantGap+18){ d.eMove=-1; }
+  else if(gap<70 && Math.random()<0.4){ d.eMove=1; }
+  else if(e.stam>(cfg.counter?46:30) && Math.random()<0.22*aggr){ d.eMove=0;
+    /* 选择架势后进攻 */
+    const r=Math.random(), w=cfg.stanceW;
+    e.stance=r<w[0]?0:(r<w[0]+w[1]?1:2);
+    tryAttack(e);
+  } else if(Math.random()<0.25 && gap<90 && p.blockFlash<=0 && e.stam>40 && Math.random()<0.3){
+    d.eMove=0; tryShove(e,p);
+  } else if(Math.random()<0.3){
+    d.eMove=0;
+    /* 变换守势 */
+    e.stance=clamp(e.stance+(Math.random()<0.5?-1:1),0,2);
+  } else d.eMove=0;
+}
+function aiMove(dt){
+  const d=duel, e=d.e, p=d.p;
+  if(!d.eMove||e.state!=='idle'||e.exhaust>0) return;
+  e.x=clamp(e.x+d.eMove*d.cfg.speed*dt*(d.eMove<0?1:0.8), p.x+52, W-80);
+}
+function duelWon(){ duel.opts.onWin(); }
+function duelLost(){
+  const d=duel;
+  showPanel({
+    title:'败阵', body:[d.opts.loseText||'你的气势散了，剑尖垂了下去。司仪唱名：对手得胜。'],
+    choices:[{label:'再战一场', sub:'胜负乃常事，可雪耻不可怯阵。', fx:()=>{
+      startDuel(d.foeId, d.opts);
+    }}],
+  });
+}
+function deed_once(key,text){
+  if(!G.flags['deed_'+key]){ G.flags['deed_'+key]=true; deed(text); }
+}
+
+/* ================= 事件文案 ================= */
+const EVENTS={
+  village(){
+    showPanel({
+      title:'沙溪村',
+      body:['村口围着一圈人。男爵的税吏攥着一头黄牛的缰绳，牛主人是个寡妇，两个孩子抓着她的裙角。',
+        '税吏晃着税册："欠租<em>三枚银币</em>，牛抵债，天经地义。"'],
+      choices:[
+        {label:'替她付清三枚银币', sub:'解今日之困。（钱袋 −3）', disabled:G.coins<3, fx:()=>{
+          G.coins-=3; G.v.ren++; G.v.yi++; sfx.coin();
+          deed('倾囊三银，为寡妇解税吏之厄');
+          villageOath();
+        }},
+        {label:'按剑上前，喝止税吏', sub:'牛可以留下，梁子也就结下了。', fx:()=>{
+          G.v.yi++; G.flags.baronGrudge=true;
+          deed('仗剑喝退税吏，护住孤儿寡母');
+          showPanel({title:'沙溪村',
+            body:['税吏松了缰绳，退开几步，眼睛却盯着你盾上的纹章记了又记。',
+              '"好，好。<em>贝洛克男爵</em>的地界上，轮到过路骑士说话了。"他冷笑着走了。'],
+            choices:[{label:'……', fx:villageOath}]});
+        }},
+        {label:'拨马绕行', sub:'路还长，事非己事。', fx:()=>{
+          G.v.yi--; deed('过沙溪村，见孤寡受迫而不顾');
+          caption('身后的哭声隔着风，跟了你一里地。',3600);
+        }},
+      ],
+    });
+  },
+  forest(){
+    showPanel({
+      title:'黑桦林',
+      body:['林子深处传来呼救——"救命——"，喊声却在半途<em>戛然而止</em>，像被人掐断。'],
+      choices:[
+        {label:'下马，绕行林缘，先察看动静', sub:'救人以义，行之以智。', fx:()=>{
+          G.v.zhi++;
+          showPanel({title:'黑桦林',
+            body:['你伏在高坡的蕨丛后望下去：两名盗匪伏在倒木之后，方才"呼救"的正是其中之一。',
+              '倒木旁横着一具行商的尸首——这陷阱，已经害过人了。'],
+            choices:[
+              {label:'出其不意，居高喝令弃械', sub:'先声夺人，占尽先手。', fx:()=>{
+                deed('识破林中假呼救之伏');
+                startDuel('brigand',{title:'林中缠斗', roundName:'黑桦林 · 真剑',
+                  loseText:'盗匪的刀比想象中沉。你且退且战，脱出了林子——此路不通。',
+                  onWin:brigandYield});
+                duel.e.stam=55;
+              }},
+              {label:'悄然退开，绕林而行', sub:'不入危墙之下。', fx:()=>{
+                deed('识破埋伏，绕林而过');
+                caption('你在林缘立了一块斜木，刻上"内有伏莽"四字。',3800);
+              }},
+            ]});
+        }},
+        {label:'纵马直入林中', sub:'救人如救火。', fx:()=>{
+          deed('闻呼救而直入黑桦林');
+          showPanel({title:'黑桦林',
+            body:['箭从倒木后射出，擦开你的肩甲——是<em>伏兵</em>。一名盗匪提刀跃出。'],
+            choices:[{label:'拔剑！', fx:()=>{
+              startDuel('brigand',{title:'林中遇伏', roundName:'黑桦林 · 真剑', pHandicap:20,
+                loseText:'盗匪的刀比想象中沉。你且退且战，脱出了林子——此路不通。',
+                onWin:brigandYield});
+            }}]});
+        }},
+      ],
+    });
+  },
+  ford(){
+    showPanel({
+      title:'苇渡口',
+      body:['渡口无人。芦苇丛里躺着一名信使——坠马而亡，看装束已有些时日。',
+        '行囊里有<em>五枚银币</em>，和一封火漆未拆的信，收信人是比武大会的司仪官。',
+        '四下无人。唯有流水。'],
+      choices:[
+        {label:'收殓遗体，银币与信一并带往大会交还', sub:'', fx:()=>{
+          G.v.shendu+=2; G.flags.courierLetter=true;
+          G.hiddenDeeds.push('渡口无人处，收殓信使，分文未取');
+          caption('你堆石为坟。水声不停。',3600);
+        }},
+        {label:'取走银币，信留在原处', sub:'（钱袋 +5）', fx:()=>{
+          G.coins+=5; G.v.shendu-=2; G.flags.tookPurse=true; sfx.coin();
+          G.hiddenDeeds.push('渡口无人处，取亡者之财');
+          caption('银币入袋，没有一点声音。',3600);
+        }},
+        {label:'不动分毫，策马离开', sub:'', fx:()=>{
+          caption('芦苇合拢，像什么都没发生过。',3600);
+        }},
+      ],
+    });
+  },
+  field(){ tourneyEntry(); },
+};
+function villageOath(){
+  showPanel({
+    title:'寡妇之请',
+    body:['寡妇拉着两个孩子跪谢。起身时她忽然道：',
+      '"骑士老爷——大会上诸侯齐聚，<em>贝洛克男爵</em>也在。能否替沙溪村进一言，减免今年秋租？满村的收成，撑不到冬天了。"'],
+    quiet:'一诺既出，便入誓约簿。',
+    choices:[
+      {label:'立誓：大会之上，必为沙溪村陈情', sub:'君子重然诺。', fx:()=>{
+        G.oaths.push({text:'为沙溪村向男爵陈情减租', kept:null});
+        caption('她记住了你盾上的纹章。',3200);
+      }},
+      {label:'不敢应承："此事我未必做得到。"', sub:'不轻诺，故寡悔。', fx:()=>{
+        G.v.zhi++; deed('不轻然诺，如实相告');
+      }},
+    ],
+  });
+}
+function brigandYield(){
+  showPanel({
+    title:'剑下之人',
+    body:['盗匪的刀脱了手，人跪在腐叶里，粗声喘气："要杀要剐，痛快些。"',
+      '这里是荒林深处。律法已死，无人来断他的罪。'],
+    choices:[
+      {label:'收缴兵刃，放他去', sub:'"再让我见你劫道，不饶。"', fx:()=>{
+        G.v.ren++; deed('林中胜而不杀，缴械纵之');
+        showPanel({title:'剑下之人',
+          body:['盗匪愣了半晌，抓起同伴逃了。跑出十几步，他回头看了你一眼——那眼神不是怕。'],
+          choices:[{label:'继续赶路', fx:()=>{}}]});
+      }},
+      {label:'索要盘缠，再放他去', sub:'（钱袋 +2）', fx:()=>{
+        G.coins+=2; sfx.coin(); deed('胜盗匪，取盘缠而纵之');
+      }},
+      {label:'取他性命', sub:'荒林无人知。', fx:()=>{
+        stain('杀降'); G.v.ren-=2; G.v.shendu--;
+        G.hiddenDeeds.push('荒林无人处，杀已降之人');
+        caption('林子静得很。只有你自己听见了那一声。',4000);
+      }},
+    ],
+  });
+}
+/* ================= 比武大会 ================= */
+function tourneyEntry(){
+  const fee=2;
+  const entries=[
+    {label:`报名参赛（报名银 ${fee} 枚）`, sub:'亮出纹章，录入名册。', disabled:G.coins<fee, fx:()=>{
+      G.coins-=fee; sfx.coin(); afterEntry();
+    }},
+  ];
+  if(G.coins<fee) entries.push({label:'典当马鞍换二银，再行报名', sub:'鞍可再置，会不再来。', fx:()=>{
+    G.flags.saddlePawned=true; G.coins+=2-fee; deed('典鞍赴会'); afterEntry();
+  }});
+  showPanel({
+    title:'圣奥仑比武场',
+    body:['场边旌旗猎猎，司仪官高踞木台唱名。比武依古礼用<em>钝剑</em>：胜负在气势，不在性命。',
+      '规程三阵：胜者晋级，终阵对阵上届之主——<em>贝洛克男爵</em>。'],
+    choices:entries,
+  });
+}
+function afterEntry(){
+  if(G.flags.courierLetter){
+    showPanel({
+      title:'呈上遗信',
+      body:['你把银币与那封火漆信呈给司仪官，并说明渡口所见。',
+        '司仪官拆信读罢，久久看你一眼："这是北境的<em>阵亡通知</em>。他家里人还在等信。"',
+        '"没有赏金，骑士。多谢你。"'],
+      choices:[{label:'"分内之事。"', fx:round1Intro}],
+    });
+  } else round1Intro();
+}
+function intelOffer(foeId,next){
+  showPanel({
+    title:'赛前 · 校场边',
+    body:['下一阵的对手正在场边操练。一名白须老侍从倚着栅栏看，看得极精。',
+      '"想听两句么，骑士？"他伸出一根手指，"一枚银币。"'],
+    choices:[
+      {label:'递上一枚银币，细细讨教', sub:'知彼知己。（钱袋 −1）', disabled:G.coins<1, fx:()=>{
+        G.coins-=1; G.v.zhi++; G.flags['intel_'+foeId]=true; sfx.coin(); next();
+      }},
+      {label:'"不必了，场上见真章。"', sub:'', fx:next},
+    ],
+  });
+}
+function round1Intro(){
+  intelOffer('talbot',()=>{
+    showPanel({title:'第一阵 · 红野猪',
+      body:['对面是<em>塔尔博</em>，诨号红野猪——三届大会靠蛮力打进过终阵的莽汉。',
+        '他掂着钝剑，隔着场子冲你咧嘴。'],
+      choices:[{label:'入场', fx:()=>{
+        startDuel('talbot',{title:'第一阵', roundName:'第一阵 · 钝剑', onWin:()=>tourneyYield('talbot',round2Intro)});
+      }}]});
+  });
+}
+function round2Intro(){
+  intelOffer('edmund',()=>{
+    showPanel({title:'第二阵 · 灰鹭',
+      body:['<em>埃德蒙爵士</em>年近六旬，甲叶擦得雪亮。人称灰鹭：不动如苇间之鹭，动则一击。',
+        '他向观礼席行礼，一丝不苟。'],
+      choices:[{label:'入场', fx:()=>{
+        startDuel('edmund',{title:'第二阵', roundName:'第二阵 · 钝剑', onWin:()=>tourneyYield('edmund',finalIntro)});
+      }}]});
+  });
+}
+function finalIntro(){
+  intelOffer('belloc',()=>{
+    const grudge=G.flags.baronGrudge;
+    showPanel({title:'终阵 · 黑塔',
+      body:[(grudge?'<em>贝洛克男爵</em>缓步入场，目光在你盾上停了一停——他认得沙溪村那桩事。':
+        '<em>贝洛克男爵</em>缓步入场，黑甲如塔，上届的桂冠还悬在他的帐前。'),
+        '他忽然扬声，压过全场："钝剑是孩童的游戏。终阵，当用<em>利剑</em>——敢么？"',
+        '满场霎时静了。司仪官皱眉看向你。'],
+      choices:[
+        {label:'应下利剑', sub:'生死各安天命。', fx:()=>{
+          G.flags.sharpFinal=true; deed('终阵应利剑之约');
+          startDuel('belloc',{title:'终阵 · 利剑', roundName:'终阵 · 利剑', onWin:()=>tourneyYield('belloc',finale)});
+        }},
+        {label:'请司仪依古礼断之', sub:'比武之礼，不为一人而改。', fx:()=>{
+          G.v.li++; G.v.zhi++; deed('终阵守古礼，不逞血气');
+          showPanel({title:'终阵 · 黑塔',
+            body:['司仪官起身，一字一句："圣奥仑之会，行钝剑之礼，<em>百年未改</em>。"',
+              '男爵冷笑一声接过钝剑。他的握法告诉你：他打算把钝剑抡出利剑的分量。'],
+            choices:[{label:'入场', fx:()=>{
+              startDuel('belloc',{title:'终阵', roundName:'终阵 · 钝剑', onWin:()=>tourneyYield('belloc',finale)});
+              duel.cfg={...FOES.belloc, aggr:FOES.belloc.aggr*1.3, dmg:26};
+              duel.e.resolveMax=120; duel.e.resolve=120;
+            }}]});
+        }},
+      ]});
+  });
+}
+function tourneyYield(foeId,next){
+  const sharp=foeId==='belloc'&&G.flags.sharpFinal;
+  const names={talbot:'塔尔博',edmund:'埃德蒙爵士',belloc:'贝洛克男爵'};
+  const nm=names[foeId];
+  const body={
+    talbot:['塔尔博单膝砸在土里，钝剑脱手。他喘得像头真野猪，半晌，闷声道："……你赢了。"'],
+    edmund:['埃德蒙爵士缓缓收剑归鞘，摘下头盔。白发汗湿。"漂亮的虚招。"老骑士说，"三十年没人这么骗过我了。"'],
+    belloc:[sharp?'利剑抵在喉甲之前，贝洛克僵立不动。满场屏息——谁都看得见，这一剑收与不收，全在你。':
+      '贝洛克的钝剑落了地。黑塔倾颓，单膝点尘。全场诸侯都站了起来。'],
+  }[foeId];
+  const choices=[];
+  choices.push({label:'扶他起身，分文不取', sub:'胜负已分，恩怨两清。', fx:()=>{
+    G.v.ren++; G.v.li++;
+    deed(`胜${nm}而免其赎金`);
+    if(foeId==='belloc') bellocAfter(true,next); else afterYieldFlavor(foeId,next);
+  }});
+  choices.push({label:'依例收取赎金', sub:'（钱袋 +5）赎俘乃古例，并非不义。', fx:()=>{
+    G.coins+=5; sfx.coin(); deed(`胜${nm}，依例收赎金五银`);
+    if(foeId==='belloc') bellocAfter(false,next); else afterYieldFlavor(foeId,next);
+  }});
+  if(sharp) choices.push({label:'手起，剑落', sub:'利剑之约，本就许人生死。', fx:()=>{
+    stain('阵斩已降之敌'); G.v.ren-=3;
+    showPanel({title:'终阵 · 血',
+      body:['满场死寂。方才还在喝彩的人们，一个一个坐了回去，没有人看你。',
+        '司仪官别过脸，把桂冠放在台上，像放下一件脏东西。'],
+      choices:[{label:'……', fx:next}]});
+  }});
+  showPanel({title:`${nm} 降伏`, body, choices});
+}
+function afterYieldFlavor(foeId,next){
+  if(foeId==='edmund'){
+    showPanel({title:'灰鹭之言',
+      body:['埃德蒙爵士与你并肩走下场。"小子，"他忽然说，"终阵的贝洛克，最恨别人稳得住。你越不动气，他越要出错。"'],
+      choices:[{label:'谢过老骑士', fx:next}]});
+  } else next();
+}
+function bellocAfter(merciful,next){
+  const grudge=G.flags.baronGrudge, helped=grudge||G.deeds.some(d=>d.includes('寡妇'));
+  if(merciful&&helped){
+    showPanel({title:'黑塔起身',
+      body:['你伸手，贝洛克盯着那只手看了很久，终于握住，借力起身。',
+        '他摘下手套，声音不大，却足够近处的诸侯听见："沙溪村……今年的秋租，<em>减半</em>。"',
+        '他顿了顿："败军之将不敢言勇。但男爵的话，还是话。"'],
+      choices:[{label:'……', fx:next}]});
+  } else next();
+}
+/* ================= 终幕 ================= */
+function finale(){
+  G.flags.champion=!G.stains.some(s=>s.includes('阵斩'));
+  const oath=G.oaths[0];
+  if(oath&&oath.kept===null){
+    showPanel({
+      title:'高台之上',
+      body:['司仪官托着桂冠走来。台下诸侯齐聚，<em>贝洛克男爵</em>也在其列。',
+        '万众目光都在你身上——你想起沙溪村，想起那句立过的誓。此刻开口，正是时候；不开口，也没人知道你许过什么。'],
+      choices:[
+        {label:'当众陈情：请为沙溪村减免秋租', sub:'一诺既出，虽千万人。', fx:()=>{
+          oath.kept=true; G.v.xin+=2; G.v.yi++;
+          deed('冠冕之下，不忘为沙溪村践诺陈情');
+          showPanel({title:'高台之上',
+            body:['台下静了片刻。几位诸侯交换眼色——胜者开口，第一句竟不是讨封赏。',
+              (G.flags.bellocReduced?'':'贝洛克面色数变，终是在众目之下缓缓点头："……准。"'),
+              '人群后排，有个抱孩子的妇人哭出了声。'],
+            choices:[{label:'受冠', fx:prizeStep}]});
+        }},
+        {label:'缄默受冠', sub:'那个誓，无人记得。', fx:()=>{
+          oath.kept=false; G.v.xin-=2;
+          deed('受冠而忘沙溪村之诺');
+          prizeStep();
+        }},
+      ],
+    });
+  } else prizeStep();
+}
+function prizeStep(){
+  if(!G.flags.champion){ shieldScreen(); return; }
+  G.coins+=10;
+  showPanel({
+    title:'奖金十银',
+    body:['桂冠之外，另有奖金<em>十枚银币</em>，沉甸甸一小袋。','司仪官问："骑士，这袋银子，如何处置？"'],
+    quiet:'慷慨（Largesse）乃骑士古德：所获散于人，名乃归于己。',
+    choices:[
+      {label:'尽数送往沙溪村', sub:'（钱袋不变）"给村里过冬。"', fx:()=>{
+        G.coins-=10; G.v.yi++; G.v.ren++; deed('尽散奖金十银予沙溪村');
+        shieldScreen();
+      }},
+      {label:'散予校场的老兵与侍从', sub:'（钱袋不变）从白须老侍从起。', fx:()=>{
+        G.coins-=10; G.v.li++; G.v.ren++; deed('散奖金予校场老兵侍从');
+        shieldScreen();
+      }},
+      {label:'收入行囊', sub:'（钱袋 +10）来日方长，处处要钱。', fx:()=>{
+        deed('收奖金十银入囊');
+        shieldScreen();
+      }},
+    ],
+  });
+}
+/* ---- 盾面结算 ---- */
+function epithet(){
+  const v=G.v;
+  if(G.stains.length) return ['蒙尘之盾','德有亏，则盾有尘。尘可拭，痕难平。'];
+  const five=[v.ren,v.yi,v.li,v.zhi,v.xin];
+  if(five.every(x=>x>=1)) return ['君子之盾','五常俱备，表里如一。此盾无需纹饰，其行即其纹章。'];
+  const names=['仁者之盾','守义之盾','知礼之盾','明智之盾','守信之盾'];
+  const mx=Math.max(...five);
+  if(mx<=0) return ['无铭之盾','一路行来，未曾多事，也未曾多情。盾面干净，也空空如也。'];
+  return [names[five.indexOf(mx)],'一德独厚，余者尚缺。行游未尽，来日可期。'];
+}
+function shieldScreen(){
+  G.scene='finale'; hud(); hint('');
+  overlay.classList.add('side');
+  const [title,judge]=epithet();
+  const v=G.v, chars=[['仁',v.ren],['义',v.yi],['礼',v.li],['智',v.zhi],['信',v.xin]];
+  /* canvas 盾面由主循环绘制 */
+  finaleData={title,judge,chars};
+  let body=[`<span style="font-size:22px;color:var(--vermilion);letter-spacing:.2em">「${title}」</span>`, judge];
+  if(v.shendu>=2&&!G.stains.length)
+    body.push('<em>另有一行小字，刻在盾的内侧，只有持盾的人看得见：</em>「无人看见时，你仍是君子。」');
+  if(G.flags.tookPurse)
+    body.push('<span style="color:var(--ink-soft)">盾的内侧也有一行小字：「苇渡口的流水，记得一件事。」</span>');
+  body.push('—— 判词 ——');
+  for(const d of G.deeds) body.push('· '+d);
+  for(const s of G.stains) body.push(`<em>‡ ${s}（此痕不可拭去）</em>`);
+  if(G.oaths.length){
+    body.push('—— 誓约簿 ——');
+    for(const o of G.oaths) body.push((o.kept?'✓ 已践':o.kept===false?'✗ 已违':'… 未了')+' · '+o.text);
+  }
+  showPanel({
+    title:'盾面 · 终幕',
+    body,
+    quiet:'德行从不显示数值。它只是被记住了——被这个王国，也被你自己。',
+    choices:[
+      {label:'再行游一遭', sub:'另一条路，另一面盾。', fx:()=>location.reload()},
+    ],
+  });
+}
+let finaleData=null;
+function drawFinale(){
+  parchment();
+  /* 盾形（居左，右侧留给判词） */
+  const cx=232, cy=286, sw=190, sh=234;
+  ctx.fillStyle=C.inkSoft; ctx.font='600 24px Kaiti SC,STKaiti,KaiTi,serif'; ctx.textAlign='center';
+  ctx.fillText('你 的 盾 面', cx, 92);
+  if(finaleData){
+    ctx.fillStyle=C.verm; ctx.font='600 30px Kaiti SC,STKaiti,KaiTi,serif';
+    ctx.fillText('「'+finaleData.title+'」', cx, cy+sh/2+64);
+  }
+  ctx.save(); ctx.translate(cx,cy);
+  ctx.beginPath();
+  ctx.moveTo(-sw/2,-sh/2+14);
+  ctx.quadraticCurveTo(0,-sh/2-6,sw/2,-sh/2+14);
+  ctx.quadraticCurveTo(sw/2+6,sh*0.18,0,sh/2);
+  ctx.quadraticCurveTo(-sw/2-6,sh*0.18,-sw/2,-sh/2+14);
+  ctx.closePath();
+  ctx.fillStyle=C.parchDeep; ctx.fill();
+  ctx.lineWidth=5; ctx.strokeStyle=C.ink; ctx.stroke();
+  ctx.lineWidth=2; ctx.strokeStyle=C.gold;
+  ctx.save(); ctx.scale(0.92,0.92); ctx.stroke(); ctx.restore();
+  if(finaleData){
+    const pos=[[0,4],[-46,-56],[46,-56],[-46,58],[46,58]];
+    finaleData.chars.forEach((c,i)=>{
+      sealChar(pos[i][0],pos[i][1],c[0],26,c[1]>=1);
+    });
+    if(G.v.shendu>=2&&!G.stains.length){ /* 慎独之星 */
+      ctx.fillStyle=C.gold; ctx.strokeStyle=C.ink; ctx.lineWidth=1.5;
+      ctx.save(); ctx.translate(0,-sh/2-26);
+      ctx.beginPath();
+      for(let i=0;i<10;i++){
+        const r=i%2?6:14, a=-Math.PI/2+i*Math.PI/5;
+        ctx[i?'lineTo':'moveTo'](Math.cos(a)*r,Math.sin(a)*r);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+    }
+    if(G.stains.length){ /* 污痕 */
+      ctx.strokeStyle='rgba(30,24,18,.75)'; ctx.lineWidth=9; ctx.lineCap='round';
+      ctx.beginPath(); ctx.moveTo(-sw/2+18,-sh/2+30); ctx.lineTo(sw/2-30,sh/2-40); ctx.stroke();
+    }
+  }
+  ctx.restore();
+  frame();
+}
+/* ================= 序章 ================= */
+function prologue(){
+  showPanel({
+    title:'序章 · 一纸誓词',
+    body:['老王驾崩，无嗣。三家摄政各执玉玺残片，王国<em>裂而未崩</em>：律法还在，却无人执行；道路还通，却盗匪横行。',
+      '你是新受封的骑士。无封地，无家名。一马，一剑，一纸誓词。',
+      '三日后，圣奥仑比武大会开幕，诸侯齐聚。你的路，从营地前的这条土路开始。'],
+    quiet:'本游戏不显示任何德行数值。你的所作所为，这个王国自会记得——终幕时，你的盾面便是你的一生。',
+    choices:[{label:'上马', sub:'方向键或 WASD 骑行。路上遇事，皆由你断。', fx:()=>{ hint('方向键 / WASD 骑行 · 朱点为未访之地 · 东北方为比武场'); }}],
+  });
+}
+/* ================= 主循环 ================= */
+let last=0;
+function loop(ts){
+  const dt=Math.min((ts-last)/1000,0.05); last=ts;
+  if(G.scene==='map'){ if(!panelOpen) tickMap(dt); drawMap(); }
+  else if(G.scene==='duel'){ if(!panelOpen) tickDuel(dt); drawDuel(dt); }
+  else if(G.scene==='finale'){ drawFinale(); }
+  else if(G.scene==='title'){ drawTitleBg(); }
+  clearPressed();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+/* 标题背景：五常印环 */
+function drawTitleBg(){
+  parchment();
+  ctx.globalAlpha=0.22;
+  ctx.save(); ctx.translate(W/2,300);
+  ['仁','义','礼','智','信'].forEach((ch,i)=>{
+    const a=-Math.PI/2+i*(Math.PI*2/5);
+    sealChar(Math.cos(a)*205,Math.sin(a)*205,ch,34,true);
+  });
+  ctx.restore();
+  ctx.globalAlpha=1;
+  frame();
+}
+/* 测试钩子（不影响游戏） */
+window.__DBG={G, player, LOCS, getDuel:()=>duel, startDuel, EVENTS, finale, shieldScreen};
+$('#startbtn').addEventListener('click',()=>{
+  ac(); /* 解锁音频 */
+  $('#title').style.display='none';
+  G.scene='map'; hud(); sfx.horn();
+  prologue();
+});
+})();
+</script>
+</body>
+</html>
