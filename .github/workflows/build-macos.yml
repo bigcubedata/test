@@ -1,0 +1,65 @@
+name: build-macos
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/rust-nes-emulator-bv9zq8]
+    paths-ignore:
+      - "**.md"
+      - "web/**"
+
+jobs:
+  macos:
+    runs-on: macos-latest # Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装双架构目标
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: 构建 arm64
+        run: cargo build --release -p nes-frontend -p nes-libretro --target aarch64-apple-darwin
+
+      - name: 构建 x86_64
+        run: cargo build --release -p nes-frontend -p nes-libretro --target x86_64-apple-darwin
+
+      - name: 合成 universal 二进制并打包
+        run: |
+          mkdir -p dist
+          lipo -create \
+            target/aarch64-apple-darwin/release/nes \
+            target/x86_64-apple-darwin/release/nes \
+            -output dist/nes
+          lipo -create \
+            target/aarch64-apple-darwin/release/librnes_libretro.dylib \
+            target/x86_64-apple-darwin/release/librnes_libretro.dylib \
+            -output dist/rnes_libretro.dylib
+          chmod +x dist/nes
+          lipo -info dist/nes
+          cat > dist/README.txt << 'EOF'
+          rnes - 周期级 NES/FC 模拟器(macOS universal:Apple Silicon + Intel)
+
+          首次运行(未签名二进制,先解除 Gatekeeper 隔离):
+            xattr -cr nes rnes_libretro.dylib
+            ./nes 游戏.nes --scale 4
+
+          参数:  [--scale N] [--region ntsc|pal|dendy]
+          手柄:  USB 通用手柄与 PS5 DualSense(USB/蓝牙)即插即用,
+                 第 1/2 只手柄 = P1/P2
+          键盘:  方向键 + Z=B X=A + 回车=Start 右Shift=Select
+          热键:  F2 存档  F4 读档  1-8 选存档槽  R 复位  P 暂停  Tab 快进  Esc 退出
+
+          rnes_libretro.dylib 是 RetroArch 核心,放入 RetroArch 的 cores 目录后
+          用 "加载核心" 选择即可。
+
+          电池存档(.sav)与即时存档(.state1-8)保存在 ROM 文件旁边。
+          EOF
+          # 用 tar 保留可执行权限(Actions 的 zip 产物会丢权限)
+          tar -czf rnes-macos-universal.tar.gz -C dist .
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: rnes-macos-universal
+          path: rnes-macos-universal.tar.gz
+          if-no-files-found: error
