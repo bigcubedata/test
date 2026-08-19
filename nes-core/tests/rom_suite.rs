@@ -323,6 +323,42 @@ fn savestate_roundtrip_deterministic() {
     assert_eq!(a.trace(), want_trace, "回放 CPU 状态不一致");
 }
 
+/// 全部已支持 mapper 编号:合成 ROM 构造 + 跑 3 帧不崩。
+#[test]
+fn mapper_matrix_constructs() {
+    let numbers: &[u16] = &[
+        0, 1, 2, 3, 4, 5, 7, 9, 10, 11, 18, 19, 21, 22, 23, 24, 25, 26, 32, 33, 34, 38, 48, 65,
+        66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 78, 79, 80, 85, 86, 87, 88, 89, 92, 93, 94,
+        95, 97, 107, 112, 113, 118, 119, 133, 140, 145, 146, 148, 149, 152, 154, 163, 180, 184,
+        185, 189, 206, 210,
+    ];
+    for &n in numbers {
+        let mut rom = vec![0u8; 16];
+        rom[0..4].copy_from_slice(b"NES\x1a");
+        rom[4] = 2; // 32K PRG
+        rom[5] = 1; // 8K CHR
+        rom[6] = ((n & 0x0F) as u8) << 4;
+        rom[7] = (n & 0xF0) as u8;
+        let mut prg = vec![0xEAu8; 32 * 1024]; // NOP 海
+        // 复位向量 $8000,IRQ/NMI 向量 $8000
+        prg[0x7FFC] = 0x00;
+        prg[0x7FFD] = 0x80;
+        prg[0x7FFA] = 0x00;
+        prg[0x7FFB] = 0x80;
+        prg[0x7FFE] = 0x00;
+        prg[0x7FFF] = 0x80;
+        rom.extend_from_slice(&prg);
+        rom.extend_from_slice(&vec![0u8; 8 * 1024]);
+        let mut nes = Nes::insert(&rom).unwrap_or_else(|e| panic!("mapper {n}: {e}"));
+        for _ in 0..3 {
+            nes.run_frame();
+        }
+        // 存档往返也不崩
+        let s = nes.save_state();
+        nes.load_state(&s).unwrap_or_else(|e| panic!("mapper {n} 存档: {e}"));
+    }
+}
+
 #[test]
 fn savestate_rejects_wrong_rom() {
     let a = load("nestest/nestest.nes");

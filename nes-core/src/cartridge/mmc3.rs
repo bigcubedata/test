@@ -13,6 +13,10 @@ pub enum Mmc3Variant {
     TxSrom,
     /// 119:CHR bank bit6 选 8K CHR RAM
     TqRom,
+    /// 74(国内常见):CHR bank 8/9 为 2K CHR RAM
+    M74,
+    /// 189:PRG 32K 由 $4120-$7FFF 锁存,CHR/IRQ 走 MMC3
+    M189,
 }
 
 /// A12 上升沿计数前必须保持低电平的最短 PPU dot 数(波形滤波)。
@@ -40,6 +44,7 @@ pub struct Mmc3 {
     a12_prev_high: bool,
     a12_low_run: u16,
     pub variant: Mmc3Variant,
+    m189_latch: u8,
 }
 
 impl Mmc3 {
@@ -66,6 +71,7 @@ impl Mmc3 {
             a12_prev_high: false,
             a12_low_run: 0,
             variant: Mmc3Variant::Normal,
+            m189_latch: 0,
         }
     }
 
@@ -116,6 +122,11 @@ impl MapperImpl for Mmc3 {
         if addr < 0x8000 {
             return PrgTarget::None;
         }
+        if self.variant == Mmc3Variant::M189 {
+            let banks32 = (self.prg_len / 0x8000).max(1);
+            let bank = ((self.m189_latch | self.m189_latch >> 4) & 7) as usize % banks32;
+            return PrgTarget::Rom(bank * 0x8000 + (addr as usize & 0x7FFF));
+        }
         let banks = self.prg_banks();
         let off = addr as usize & 0x1FFF;
         let mode1 = self.bank_select & 0x40 != 0;
@@ -141,6 +152,10 @@ impl MapperImpl for Mmc3 {
     }
 
     fn cpu_write(&mut self, addr: u16, val: u8, _rom_at: u8) -> PrgWrite {
+        if self.variant == Mmc3Variant::M189 && (0x4120..0x8000).contains(&addr) {
+            self.m189_latch = val;
+            return PrgWrite::Handled;
+        }
         if (0x6000..0x8000).contains(&addr) {
             if self.ram_enable && !self.ram_protect {
                 return PrgWrite::Ram((addr - 0x6000) as usize);
@@ -216,6 +231,16 @@ impl MapperImpl for Mmc3 {
                     _ => (reg & 0x3F) as usize * 0x400 + (eff & 0x3FF),
                 };
                 return ChrTarget::Ram(base);
+            }
+        }
+        if self.variant == Mmc3Variant::M74 {
+            // bank 8/9 为 2K CHR RAM(国内 74 号板)
+            let bank1k = match eff >> 10 {
+                0 | 1 | 2 | 3 => (reg & 0xFE) as usize + (eff >> 10 & 1),
+                _ => reg as usize,
+            };
+            if bank1k == 8 || bank1k == 9 {
+                return ChrTarget::Ram((bank1k - 8) * 0x400 + (eff & 0x3FF));
             }
         }
         ChrTarget::Rom(i)

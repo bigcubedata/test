@@ -2,12 +2,15 @@
 //!
 //! 枚举而非 trait object:serde 直接派生、无虚表开销、匹配分支可内联。
 
+use super::irq_boards::{Asder112, Irem32, Irem65, Jaleco18, Nanjing163, Taito33, Taito80, Vrc1, Vrc3};
+use super::misc::{simple_latch_for, Jaleco7292, M184, M185, M86, M87, M89, Nina001, SimpleLatch};
 use super::mmc2::Mmc2;
 use super::mmc3::{Mmc3, Mmc3Variant};
 use super::mmc5::Mmc5;
 use super::namco::{Namco108, N163, N175};
 use super::sunsoft::{Fme7, Sunsoft3, Sunsoft4};
 use super::vrc::{Vrc24, Vrc6};
+use super::vrc7::Vrc7;
 use super::{mmc1::Mmc1, Mirroring, RomError};
 use serde::{Deserialize, Serialize};
 
@@ -126,6 +129,24 @@ pub enum Mapper {
     Sunsoft4(Sunsoft4),
     Vrc24(Vrc24),
     Vrc6(Vrc6),
+    Vrc7(Vrc7),
+    SimpleLatch(SimpleLatch),
+    Nina001(Nina001),
+    M86(M86),
+    M87(M87),
+    M89(M89),
+    M184(M184),
+    M185(M185),
+    Jaleco7292(Jaleco7292),
+    Jaleco18(Jaleco18),
+    Irem32(Irem32),
+    Irem65(Irem65),
+    Taito33(Taito33),
+    Taito80(Taito80),
+    Vrc1(Vrc1),
+    Vrc3(Vrc3),
+    Asder112(Asder112),
+    Nanjing163(Nanjing163),
 }
 
 macro_rules! delegate {
@@ -150,6 +171,24 @@ macro_rules! delegate {
             Mapper::Sunsoft4($m) => $e,
             Mapper::Vrc24($m) => $e,
             Mapper::Vrc6($m) => $e,
+            Mapper::Vrc7($m) => $e,
+            Mapper::SimpleLatch($m) => $e,
+            Mapper::Nina001($m) => $e,
+            Mapper::M86($m) => $e,
+            Mapper::M87($m) => $e,
+            Mapper::M89($m) => $e,
+            Mapper::M184($m) => $e,
+            Mapper::M185($m) => $e,
+            Mapper::Jaleco7292($m) => $e,
+            Mapper::Jaleco18($m) => $e,
+            Mapper::Irem32($m) => $e,
+            Mapper::Irem65($m) => $e,
+            Mapper::Taito33($m) => $e,
+            Mapper::Taito80($m) => $e,
+            Mapper::Vrc1($m) => $e,
+            Mapper::Vrc3($m) => $e,
+            Mapper::Asder112($m) => $e,
+            Mapper::Nanjing163($m) => $e,
         }
     };
 }
@@ -253,7 +292,44 @@ impl Mapper {
                 m.variant = Mmc3Variant::TqRom;
                 Mapper::Mmc3(m)
             }
-            n => return Err(RomError::UnsupportedMapper(n)),
+            85 => Mapper::Vrc7(Vrc7::new(prg_len, chr_len)),
+            34 if chr_len > 0x2000 => Mapper::Nina001(Nina001::new(prg_len, chr_len)),
+            18 => Mapper::Jaleco18(Jaleco18::new(prg_len, chr_len)),
+            32 => Mapper::Irem32(Irem32::new(prg_len, chr_len)),
+            33 => Mapper::Taito33(Taito33::new(false, prg_len, chr_len)),
+            48 => Mapper::Taito33(Taito33::new(true, prg_len, chr_len)),
+            65 => Mapper::Irem65(Irem65::new(prg_len, chr_len)),
+            72 => Mapper::Jaleco7292(Jaleco7292::new(false, prg_len, chr_len, header_mirroring)),
+            92 => Mapper::Jaleco7292(Jaleco7292::new(true, prg_len, chr_len, header_mirroring)),
+            73 => Mapper::Vrc3(Vrc3::new(prg_len)),
+            75 => Mapper::Vrc1(Vrc1::new(prg_len, chr_len)),
+            80 => Mapper::Taito80(Taito80::new(prg_len, chr_len)),
+            86 => Mapper::M86(M86::new(prg_len, chr_len, header_mirroring)),
+            87 => Mapper::M87(M87::new(prg_len, chr_len, header_mirroring)),
+            89 => Mapper::M89(M89::new(prg_len, chr_len)),
+            112 => Mapper::Asder112(Asder112::new(prg_len, chr_len)),
+            163 => Mapper::Nanjing163(Nanjing163::new(prg_len)),
+            184 => Mapper::M184(M184::new(prg_len, chr_len, header_mirroring)),
+            185 => Mapper::M185(M185::new(prg_len, header_mirroring)),
+            74 => {
+                let mut m = Mmc3::new(prg_len, submapper, header_mirroring);
+                m.variant = Mmc3Variant::M74;
+                Mapper::Mmc3(m)
+            }
+            189 => {
+                let mut m = Mmc3::new(prg_len, submapper, header_mirroring);
+                m.variant = Mmc3Variant::M189;
+                Mapper::Mmc3(m)
+            }
+            n => match simple_latch_for(n, submapper) {
+                Some(cfg) => Mapper::SimpleLatch(SimpleLatch::new(
+                    cfg,
+                    prg_len,
+                    chr_len,
+                    header_mirroring,
+                )),
+                None => return Err(RomError::UnsupportedMapper(n)),
+            },
         })
     }
 

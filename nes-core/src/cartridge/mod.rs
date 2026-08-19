@@ -3,7 +3,9 @@
 //! Mapper 只做地址翻译与寄存器逻辑,不持有 ROM 数据;`Cartridge` 负责真正的
 //! 存储访问。这样 mapper 可以整体 serde,ROM 大块数据不进即时存档。
 
+mod irq_boards;
 mod mapper;
+mod misc;
 mod mmc1;
 mod mmc2;
 mod mmc3;
@@ -11,6 +13,7 @@ mod mmc5;
 mod namco;
 mod sunsoft;
 mod vrc;
+mod vrc7;
 
 pub use mapper::{ChrTarget, Mapper, MapperImpl, NtRead, NtWrite, PrgTarget, PrgWrite};
 
@@ -134,6 +137,10 @@ impl Cartridge {
         // MMC5/FME-7 可寻址最多 64KB PRG RAM
         if matches!(mapper, 5 | 69) {
             prg_ram_len = prg_ram_len.max(64 * 1024);
+        }
+        // 74/119:CHR ROM 之外还带 CHR RAM
+        if matches!(mapper, 74 | 119) {
+            chr_ram_len = chr_ram_len.max(8 * 1024);
         }
         let battery = f6 & 0x02 != 0;
         let trainer = f6 & 0x04 != 0;
