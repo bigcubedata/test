@@ -10,11 +10,14 @@ name = "nes"
 path = "src/main.rs"
 
 [features]
-default = ["audio", "gamepad"]
-# Linux 构建依赖:audio 需 libasound2-dev,gamepad 需 libudev-dev。
+default = ["audio", "gamepad", "dualsense"]
+# Linux 构建依赖:audio 需 libasound2-dev,gamepad/dualsense 需 libudev-dev。
 # 无头/CI 环境可 --no-default-features 裸构建。
 audio = ["dep:cpal"]
 gamepad = ["dep:gilrs"]
+# PS5 DualSense 直连 HID(Windows/macOS 默认启用;Linux 走内核驱动 + gilrs,
+# 老内核可用 NES_DUALSENSE_HID=1 启用本路径)
+dualsense = ["dep:hidapi"]
 
 [dependencies]
 nes-core = { path = "../nes-core" }
@@ -22,3 +25,4 @@ winit = "0.30"
 pixels = "0.17"
 cpal = { version = "0.18", optional = true }
 gilrs = { version = "0.11", optional = true }
+hidapi = { version = "2", optional = true }

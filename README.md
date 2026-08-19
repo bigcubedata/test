@@ -72,6 +72,25 @@ ROM 请自备,仓库不含任何商业游戏(`test-roms/` 为社区自由分发�
 | F2 / F4 / 1-8(桌面) | 存档 / 读档 / 选槽 |
 | R / P / Tab / Esc(桌面) | 复位 / 暂停 / 快进 / 退出 |
 
+### 手柄(USB 通用 + PS5 DualSense 蓝牙)
+
+即插即用,热插拔,第 1/2 只手柄 → P1/P2(键盘始终并入 P1)。
+映射:右侧面键(○/East)= A,下/左面键(✕/□)= B,Create/Share = Select,
+Options = Start,十字键与左摇杆等效。
+
+| 平台 | 通用 USB 手柄 | PS5 DualSense(USB/蓝牙) |
+|---|---|---|
+| Linux 桌面 | gilrs(evdev + SDL 映射库) | 内核 hid-playstation 驱动 + gilrs(USB/蓝牙同路径) |
+| Windows 桌面 | gilrs(XInput,Xbox 类) | 内置 HID 驱动直连(hidapi,USB/蓝牙三种报文) |
+| macOS 桌面 | gilrs(IOKit) | 内置 HID 驱动直连 |
+| 浏览器 | Gamepad API 标准映射 | Gamepad API(Chrome/Edge/Firefox 蓝牙直连) |
+
+- 自定义映射:桌面端支持 `SDL_GAMECONTROLLERCONFIG` 环境变量(SDL 映射串)。
+- Linux 老内核(<5.12 无 hid-playstation)可 `NES_DUALSENSE_HID=1` 启用内置驱动;
+  若 hidraw 权限不足,添加 udev 规则:
+  `SUBSYSTEM=="hidraw", ATTRS{idVendor}=="054c", MODE="0660", TAG+="uaccess"`。
+- 蓝牙配对:长按 DualSense 的 PS + Create 键至灯条闪烁,系统蓝牙里配对即可。
+
 ## 测试与无头工具
 
 ```sh

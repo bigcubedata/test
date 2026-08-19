@@ -6,6 +6,11 @@
 //! 键位:方向键;Z=B X=A;回车=Start 右Shift=Select;
 //! R 复位,P 暂停,Tab 快进,1-8 选存档槽,F2 存档,F4 读档,Esc 退出。
 
+#[cfg(feature = "dualsense")]
+mod dualsense;
+#[cfg(feature = "gamepad")]
+mod pads;
+
 use nes_core::{Buttons, Nes, Port, Region, FRAME_H, FRAME_W};
 use pixels::{Pixels, SurfaceTexture};
 use std::path::PathBuf;
@@ -27,7 +32,6 @@ struct App {
     window: Option<Arc<Window>>,
     pixels: Option<Pixels<'static>>,
     buttons: Buttons,
-    pad_buttons: Buttons,
     paused: bool,
     fast_forward: bool,
     state_slot: u8,
@@ -39,7 +43,9 @@ struct App {
     #[cfg(feature = "audio")]
     _audio_stream: Option<cpal::Stream>,
     #[cfg(feature = "gamepad")]
-    gilrs: Option<gilrs::Gilrs>,
+    pads: pads::GilrsPads,
+    #[cfg(feature = "dualsense")]
+    ds: dualsense::DualSense,
     audio_scratch: Vec<i16>,
 }
 
@@ -82,8 +88,9 @@ impl App {
             self.time_debt = 0.0;
         }
         for _ in 0..frames {
-            self.nes
-                .set_input(Port::P1, Buttons(self.buttons.0 | self.pad_buttons.0));
+            let (p1, p2) = self.gather_input();
+            self.nes.set_input(Port::P1, p1);
+            self.nes.set_input(Port::P2, p2);
             self.nes.run_frame();
             self.pump_audio();
         }
@@ -181,47 +188,28 @@ impl App {
         }
     }
 
-    #[cfg(feature = "gamepad")]
-    fn poll_gamepad(&mut self) {
-        use gilrs::{Axis, Button, EventType};
-        let Some(gilrs) = &mut self.gilrs else { return };
-        while let Some(ev) = gilrs.next_event() {
-            match ev.event {
-                EventType::ButtonPressed(b, _) | EventType::ButtonReleased(b, _) => {
-                    let pressed = matches!(ev.event, EventType::ButtonPressed(..));
-                    let target = match b {
-                        Button::East => Some(Buttons::A),
-                        Button::South | Button::West => Some(Buttons::B),
-                        Button::Start => Some(Buttons::START),
-                        Button::Select => Some(Buttons::SELECT),
-                        Button::DPadUp => Some(Buttons::UP),
-                        Button::DPadDown => Some(Buttons::DOWN),
-                        Button::DPadLeft => Some(Buttons::LEFT),
-                        Button::DPadRight => Some(Buttons::RIGHT),
-                        _ => None,
-                    };
-                    if let Some(t) = target {
-                        self.pad_buttons.set(t, pressed);
-                    }
-                }
-                EventType::AxisChanged(axis, v, _) => match axis {
-                    Axis::LeftStickX => {
-                        self.pad_buttons.set(Buttons::LEFT, v < -0.5);
-                        self.pad_buttons.set(Buttons::RIGHT, v > 0.5);
-                    }
-                    Axis::LeftStickY => {
-                        self.pad_buttons.set(Buttons::DOWN, v < -0.5);
-                        self.pad_buttons.set(Buttons::UP, v > 0.5);
-                    }
-                    _ => {}
-                },
-                _ => {}
-            }
+    /// 键盘 | 通用手柄槽 | DualSense 槽 → P1/P2。
+    #[allow(unused_mut)] // 两个手柄 feature 都关时 p1/p2 无需可变
+    fn gather_input(&mut self) -> (Buttons, Buttons) {
+        let mut p1 = self.buttons.0;
+        let mut p2 = 0u8;
+        #[cfg(feature = "gamepad")]
+        {
+            p1 |= self.pads.player(0).0;
+            p2 |= self.pads.player(1).0;
         }
+        #[cfg(feature = "dualsense")]
+        {
+            p1 |= self.ds.player(0).0;
+            p2 |= self.ds.player(1).0;
+        }
+        (Buttons(p1), Buttons(p2))
     }
 
-    #[cfg(not(feature = "gamepad"))]
-    fn poll_gamepad(&mut self) {}
+    fn poll_pads(&mut self) {
+        #[cfg(feature = "gamepad")]
+        self.pads.poll();
+    }
 }
 
 impl ApplicationHandler for App {
@@ -271,7 +259,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                self.poll_gamepad();
+                self.poll_pads();
                 self.run_emulation();
                 self.render();
             }
@@ -426,13 +414,9 @@ fn main() {
     }
 
     #[cfg(feature = "gamepad")]
-    let gilrs = match gilrs::Gilrs::new() {
-        Ok(g) => Some(g),
-        Err(e) => {
-            eprintln!("手柄初始化失败({e}),仅键盘");
-            None
-        }
-    };
+    let pads = pads::GilrsPads::new();
+    #[cfg(feature = "dualsense")]
+    let ds = dualsense::DualSense::start();
 
     let event_loop = EventLoop::new().expect("创建事件循环失败");
     event_loop.set_control_flow(ControlFlow::Poll);
@@ -443,7 +427,6 @@ fn main() {
         window: None,
         pixels: None,
         buttons: Buttons::default(),
-        pad_buttons: Buttons::default(),
         paused: false,
         fast_forward: false,
         state_slot: 1,
@@ -455,7 +438,9 @@ fn main() {
         #[cfg(feature = "audio")]
         _audio_stream: audio_stream,
         #[cfg(feature = "gamepad")]
-        gilrs,
+        pads,
+        #[cfg(feature = "dualsense")]
+        ds,
         audio_scratch: Vec::new(),
     };
     if let Err(e) = event_loop.run_app(&mut app) {

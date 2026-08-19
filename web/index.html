@@ -22,7 +22,8 @@
   <span id="status" class="hint">选择 .nes 文件开始(ROM 不会上传,纯本地运行)</span>
 </div>
 <canvas id="screen" width="256" height="240"></canvas>
-<div class="hint">方向键移动;Z=B X=A;回车=Start 右Shift=Select;点击画面获取焦点</div>
+<div class="hint">键盘:方向键 + Z=B X=A + 回车=Start 右Shift=Select;
+手柄:USB/蓝牙(含 PS5 DualSense)即插即用,第 1/2 只 → P1/P2 <span id="pads"></span></div>
 <script type="module">
 const W = 256, H = 240;
 const status = document.getElementById('status');
@@ -90,14 +91,42 @@ function startAudio() {
   node.connect(audioCtx.destination);
 }
 
+const padStatus = document.getElementById('pads');
+function padMask(gp) {
+  if (!gp) return 0;
+  let m = 0;
+  const b = i => gp.buttons[i] && gp.buttons[i].pressed;
+  // 标准映射:0=下(✕) 1=右(○) 2=左(□) 3=上(△) 8=Select/Create 9=Start/Options 12-15=十字键
+  if (b(1) || b(3)) m |= 0x01;            // NES A
+  if (b(0) || b(2)) m |= 0x02;            // NES B
+  if (b(8)) m |= 0x04;                    // Select
+  if (b(9)) m |= 0x08;                    // Start
+  if (b(12)) m |= 0x10;
+  if (b(13)) m |= 0x20;
+  if (b(14)) m |= 0x40;
+  if (b(15)) m |= 0x80;
+  const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0;
+  if (ax < -0.5) m |= 0x40;
+  if (ax > 0.5) m |= 0x80;
+  if (ay < -0.5) m |= 0x10;
+  if (ay > 0.5) m |= 0x20;
+  return m;
+}
+function pollPads() {
+  const gps = (navigator.getGamepads ? navigator.getGamepads() : []).filter(g => g);
+  if (padStatus) padStatus.textContent = gps.length ? `(已连接 ${gps.length} 只)` : '';
+  return [padMask(gps[0]), padMask(gps[1])];
+}
+
 function loop(now) {
   const dt = (now - lastTime) / 1000;
   lastTime = now;
   debt = Math.min(debt + dt, 3 / FPS);
   let frames = 0;
   while (debt >= 1 / FPS && frames < 3) { debt -= 1 / FPS; frames++; }
+  const [pad1, pad2] = pollPads();
   for (let i = 0; i < frames; i++) {
-    wasm.set_buttons(buttons, 0);
+    wasm.set_buttons(buttons | pad1, pad2);
     wasm.run_frame();
   }
   if (frames > 0) {
