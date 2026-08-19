@@ -3,6 +3,8 @@
 //!   nes-headless blargg <rom> [秒数上限]    —— blargg $6000 状态协议
 //!   nes-headless run <rom> --frames N      —— 跑 N 帧输出帧哈希
 //!   nes-headless ppm <rom> <out.ppm> [N]   —— 跑 N 帧后导出画面
+//!   nes-headless record <rom> <起> <止> <out.wav>
+//!       —— [起,止) 帧录像:RGB24 裸帧→stdout(管给 ffmpeg),48kHz 音频→WAV
 
 use nes_core::{Buttons, Nes, Port, Region};
 use std::process::ExitCode;
@@ -53,6 +55,11 @@ fn main() -> ExitCode {
         Some("run") if args.len() >= 3 => {
             let frames: u64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(60);
             run_hash(&args[2], frames)
+        }
+        Some("record") if args.len() >= 6 => {
+            let start: u64 = args[3].parse().unwrap_or(0);
+            let end: u64 = args[4].parse().unwrap_or(600);
+            record(&args[2], start, end, &args[5])
         }
         Some("text") if args.len() >= 3 => {
             // 帧数可为逗号分隔的多个检查点:一次长跑,途中多次转储
@@ -292,6 +299,78 @@ fn blargg(rom_path: &str, max_secs: u64) -> ExitCode {
     }
     eprintln!("超时:{max_secs}s 内未完成");
     ExitCode::FAILURE
+}
+
+// ---------------- 录像(视频裸帧→stdout,音频→WAV) ----------------
+
+/// [start,end) 帧区间:RGB24 裸帧写 stdout(管给 ffmpeg),48kHz 单声道
+/// 16 位 PCM 写 WAV。进度与统计走 stderr。用法:
+///   nes-headless record <rom> <start> <end> <out.wav> | ffmpeg -f rawvideo …
+fn record(rom_path: &str, start: u64, end: u64, wav_path: &str) -> ExitCode {
+    use std::io::Write;
+    const RATE: f64 = 48000.0;
+    let mut nes = load(rom_path);
+    nes.set_audio_rate(RATE);
+    let mut script = InputScript::from_env();
+    let mut sink: Vec<i16> = Vec::new();
+    for f in 0..start {
+        script.apply(&mut nes, f);
+        nes.run_frame();
+        sink.clear();
+        nes.drain_audio(&mut sink); // 丢弃起始段音频
+    }
+    let stdout = std::io::stdout();
+    let mut vid = std::io::BufWriter::with_capacity(1 << 20, stdout.lock());
+    let mut rgba = vec![0u8; nes_core::FRAME_W * nes_core::FRAME_H * 4];
+    let mut rgb = vec![0u8; nes_core::FRAME_W * nes_core::FRAME_H * 3];
+    let mut audio: Vec<i16> = Vec::new();
+    sink.clear();
+    for f in start..end {
+        script.apply(&mut nes, f);
+        nes.run_frame();
+        nes.drain_audio(&mut audio);
+        nes.render_rgba(&mut rgba);
+        for (d, s) in rgb.chunks_exact_mut(3).zip(rgba.chunks_exact(4)) {
+            d.copy_from_slice(&s[..3]);
+        }
+        if vid.write_all(&rgb).is_err() {
+            eprintln!("视频管道中断于帧 {f}");
+            return ExitCode::FAILURE;
+        }
+        if f % 1200 == 0 {
+            eprintln!("录制 {f}/{end}");
+        }
+    }
+    drop(vid);
+    // WAV(PCM s16le 单声道 48kHz)
+    let data_len = (audio.len() * 2) as u32;
+    let mut w = Vec::with_capacity(44 + audio.len() * 2);
+    w.extend_from_slice(b"RIFF");
+    w.extend_from_slice(&(36 + data_len).to_le_bytes());
+    w.extend_from_slice(b"WAVEfmt ");
+    w.extend_from_slice(&16u32.to_le_bytes());
+    w.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    w.extend_from_slice(&1u16.to_le_bytes()); // 单声道
+    w.extend_from_slice(&(RATE as u32).to_le_bytes());
+    w.extend_from_slice(&((RATE as u32) * 2).to_le_bytes());
+    w.extend_from_slice(&2u16.to_le_bytes());
+    w.extend_from_slice(&16u16.to_le_bytes());
+    w.extend_from_slice(b"data");
+    w.extend_from_slice(&data_len.to_le_bytes());
+    for s in &audio {
+        w.extend_from_slice(&s.to_le_bytes());
+    }
+    if std::fs::write(wav_path, w).is_err() {
+        eprintln!("写 {wav_path} 失败");
+        return ExitCode::FAILURE;
+    }
+    let frames = end - start;
+    let fps = frames as f64 * RATE / audio.len() as f64;
+    eprintln!(
+        "录制完成:{frames} 帧,{} 音频样本,精确帧率 {fps:.4} fps",
+        audio.len()
+    );
+    ExitCode::SUCCESS
 }
 
 // ---------------- 帧哈希 / 截图 ----------------
