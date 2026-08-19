@@ -9,5 +9,16 @@ description = "Desktop frontend: winit + pixels(wgpu) + cpal + gilrs"
 name = "nes"
 path = "src/main.rs"
 
+[features]
+default = ["audio", "gamepad"]
+# Linux 构建依赖:audio 需 libasound2-dev,gamepad 需 libudev-dev。
+# 无头/CI 环境可 --no-default-features 裸构建。
+audio = ["dep:cpal"]
+gamepad = ["dep:gilrs"]
+
 [dependencies]
 nes-core = { path = "../nes-core" }
+winit = "0.30"
+pixels = "0.17"
+cpal = { version = "0.18", optional = true }
+gilrs = { version = "0.11", optional = true }

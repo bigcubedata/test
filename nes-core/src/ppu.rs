@@ -394,6 +394,10 @@ impl Nes {
         } else {
             let step = if self.ppu.ctrl & 0x04 != 0 { 32 } else { 1 };
             self.ppu.v = self.ppu.v.wrapping_add(step) & 0x7FFF;
+            // 递增后的地址会出现在 PPU 地址总线上(MMC3 的 A12 能看到)
+            let v = self.ppu.v;
+            let cyc = self.ppu.ppu_cycles;
+            self.cart.mapper.ppu_addr_notify(v & 0x3FFF, cyc);
         }
     }
 
