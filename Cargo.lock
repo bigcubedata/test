@@ -1033,6 +1033,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "nes-libretro"
+version = "0.1.0"
+dependencies = [
+ "nes-core",
+]
+
+[[package]]
+name = "nes-wasm"
+version = "0.1.0"
+dependencies = [
+ "nes-core",
+]
+
+[[package]]
 name = "nix"
 version = "0.31.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

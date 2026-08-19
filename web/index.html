@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rnes — 浏览器版 NES 模拟器</title>
+<style>
+  :root { color-scheme: dark; }
+  body { background:#111; color:#ddd; font:14px/1.6 system-ui, sans-serif;
+         display:flex; flex-direction:column; align-items:center; gap:12px; padding:24px; }
+  canvas { width:768px; max-width:95vw; aspect-ratio:256/240;
+           image-rendering:pixelated; background:#000; border:1px solid #333; }
+  .hint { color:#888; font-size:12px; }
+  button, input { font:inherit; }
+</style>
+</head>
+<body>
+<h1>rnes<span class="hint"> — 周期级 NES 模拟器(Rust → wasm)</span></h1>
+<div>
+  <input type="file" id="rom" accept=".nes">
+  <button id="reset">复位</button>
+  <span id="status" class="hint">选择 .nes 文件开始(ROM 不会上传,纯本地运行)</span>
+</div>
+<canvas id="screen" width="256" height="240"></canvas>
+<div class="hint">方向键移动;Z=B X=A;回车=Start 右Shift=Select;点击画面获取焦点</div>
+<script type="module">
+const W = 256, H = 240;
+const status = document.getElementById('status');
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d');
+
+let wasm = null, mem = null;
+let audioCtx = null, audioBuf = null, audioBufPtr = 0;
+let running = false, lastTime = 0, debt = 0;
+const FPS = 60.0988;
+
+const resp = await fetch('nes_wasm.wasm');
+const { instance } = await WebAssembly.instantiate(await resp.arrayBuffer(), {});
+wasm = instance.exports;
+mem = wasm.memory;
+
+let buttons = 0;
+const KEYMAP = {
+  ArrowUp: 0x10, ArrowDown: 0x20, ArrowLeft: 0x40, ArrowRight: 0x80,
+  KeyZ: 0x02, KeyX: 0x01, Enter: 0x08, ShiftRight: 0x04,
+};
+addEventListener('keydown', e => {
+  const b = KEYMAP[e.code];
+  if (b !== undefined) { buttons |= b; e.preventDefault(); }
+});
+addEventListener('keyup', e => {
+  const b = KEYMAP[e.code];
+  if (b !== undefined) { buttons &= ~b; e.preventDefault(); }
+});
+
+document.getElementById('rom').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const ptr = wasm.wasm_alloc(bytes.length);
+  new Uint8Array(mem.buffer, ptr, bytes.length).set(bytes);
+  if (wasm.load_rom(ptr, bytes.length) !== 0) {
+    status.textContent = 'ROM 加载失败(格式或 mapper 不支持)';
+    return;
+  }
+  status.textContent = file.name;
+  startAudio();
+  if (!running) { running = true; lastTime = performance.now(); requestAnimationFrame(loop); }
+});
+
+document.getElementById('reset').addEventListener('click', () => wasm.reset());
+
+function startAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  wasm.set_sample_rate(audioCtx.sampleRate);
+  audioBufPtr = wasm.wasm_alloc(4096 * 4);
+  const node = audioCtx.createScriptProcessor(1024, 0, 1);
+  node.onaudioprocess = ev => {
+    const out = ev.outputBuffer.getChannelData(0);
+    const n = wasm.audio_take(audioBufPtr, out.length);
+    const samples = new Float32Array(mem.buffer, audioBufPtr, n);
+    out.set(samples.subarray(0, n));
+    for (let i = n; i < out.length; i++) out[i] = 0;
+    // 动态速率控制:按积压水位微调
+    const pending = wasm.audio_pending();
+    const target = audioCtx.sampleRate * 0.04;
+    wasm.set_rate_adjust(1.0 + 0.005 * Math.max(-1, Math.min(1, (pending - target) / target)));
+  };
+  node.connect(audioCtx.destination);
+}
+
+function loop(now) {
+  const dt = (now - lastTime) / 1000;
+  lastTime = now;
+  debt = Math.min(debt + dt, 3 / FPS);
+  let frames = 0;
+  while (debt >= 1 / FPS && frames < 3) { debt -= 1 / FPS; frames++; }
+  for (let i = 0; i < frames; i++) {
+    wasm.set_buttons(buttons, 0);
+    wasm.run_frame();
+  }
+  if (frames > 0) {
+    const rgba = new Uint8ClampedArray(mem.buffer, wasm.frame_ptr(), W * H * 4);
+    ctx.putImageData(new ImageData(rgba, W, H), 0, 0);
+  }
+  requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>

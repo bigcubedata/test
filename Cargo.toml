@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["nes-core", "nes-headless", "nes-frontend"]
+members = ["nes-core", "nes-headless", "nes-frontend", "nes-wasm", "nes-libretro"]
 
 [workspace.package]
 version = "0.1.0"

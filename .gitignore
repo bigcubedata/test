@@ -4,3 +4,4 @@
 *.state
 perf.data*
 flamegraph.svg
+web/nes_wasm.wasm

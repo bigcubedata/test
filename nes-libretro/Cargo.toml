@@ -1,0 +1,13 @@
+[package]
+name = "nes-libretro"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "libretro core (hand-written FFI) over nes-core"
+
+[lib]
+name = "rnes_libretro"
+crate-type = ["cdylib"]
+
+[dependencies]
+nes-core = { path = "../nes-core" }

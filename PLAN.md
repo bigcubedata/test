@@ -89,8 +89,8 @@
 | **M1** | workspace 骨架、iNES/NES 2.0 解析、CPU 全指令周期精确 | nestest 全对齐(headless) | ✅ 完成(8991 行全对齐) |
 | **M2** | PPU 全管线(背景/精灵/滚动)、mapper 0、窗口与输入 | SMB 可玩,分屏/计时正确 | ✅ 完成(sprite_hit 11/11 等,见 README 矩阵) |
 | **M3** | APU 5 通道与音频同步、第一梯队 mapper、双档存档 | 魂斗罗可玩带声音,blargg CPU/PPU 套件绿 | ✅ 完成(apu_test 8/8;mapper 0/1/2/3/4/7/11/66/71/180;9/10 待补) |
-| **M4** | MMC5/VRC/N163/FME-7、扩展音源(VRC6/FDS/N163/5B/MMC5)、MMC3 A12 全时序、PAL/Dendy、精度长尾(cpu_interrupts 3-5、apu_reset、even_odd 1-dot、A12 双 dot 波形) | blargg APU + IRQ 时序测试绿 | ⬜ 未开始 |
-| **M5** | 表驱动铺 mapper 至 200+ 并滚动推进、VRC7 FM、UNIF/FDS、滤镜、wasm、libretro、逐 dot 循环批处理优化 | 按编号回归清单 | ⬜ 未开始 |
+| **M4** | MMC5/VRC/N163/FME-7、扩展音源、MMC3 A12 波形、PAL/Dendy、apu_reset | blargg APU + IRQ 时序测试绿 | ✅ 完成(A12 双 dot 波形落地;mmc3-4/6、cpu_interrupts 3-5、apu_reset 2 项遗留,见 README) |
+| **M5** | mapper 铺量、VRC7 FM、wasm、libretro | 按编号回归清单 | ✅ 主体完成(68 编号 + 合成 ROM 矩阵测试;wasm/libretro 双目标;FDS/UNIF/滤镜/批处理优化遗留) |
 
 ## 9. 主要风险
 

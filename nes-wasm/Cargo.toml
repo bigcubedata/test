@@ -1,0 +1,12 @@
+[package]
+name = "nes-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Browser core: zero-dependency C-ABI wasm exports over nes-core"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+nes-core = { path = "../nes-core" }
