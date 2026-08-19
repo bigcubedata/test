@@ -4,7 +4,7 @@
 //!   nes-headless run <rom> --frames N      —— 跑 N 帧输出帧哈希
 //!   nes-headless ppm <rom> <out.ppm> [N]   —— 跑 N 帧后导出画面
 
-use nes_core::Nes;
+use nes_core::{Nes, Region};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -44,7 +44,14 @@ fn load(path: &str) -> Nes {
         eprintln!("读取 {path} 失败: {e}");
         std::process::exit(2);
     });
-    Nes::insert(&rom).unwrap_or_else(|e| {
+    // NES_REGION=pal|dendy|ntsc 覆盖(头无区制信息的 PAL 测试 ROM 用)
+    let region = match std::env::var("NES_REGION").as_deref() {
+        Ok("pal") => Some(Region::Pal),
+        Ok("dendy") => Some(Region::Dendy),
+        Ok("ntsc") => Some(Region::Ntsc),
+        _ => None,
+    };
+    Nes::insert_with_region(&rom, region).unwrap_or_else(|e| {
         eprintln!("加载 {path} 失败: {e}");
         std::process::exit(2);
     })

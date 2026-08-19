@@ -6,7 +6,7 @@
 //! 键位:方向键;Z=B X=A;回车=Start 右Shift=Select;
 //! R 复位,P 暂停,Tab 快进,1-8 选存档槽,F2 存档,F4 读档,Esc 退出。
 
-use nes_core::{Buttons, Nes, Port, FRAME_H, FRAME_W};
+use nes_core::{Buttons, Nes, Port, Region, FRAME_H, FRAME_W};
 use pixels::{Pixels, SurfaceTexture};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -17,8 +17,6 @@ use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
-
-const NTSC_FPS: f64 = 60.0988;
 
 type AudioRing = Arc<Mutex<std::collections::VecDeque<i16>>>;
 
@@ -69,13 +67,14 @@ impl App {
             return;
         }
         // 时间累加器:按 NTSC 场率决定本次重绘应跑的帧数(防螺旋上限 3)
+        let fps = self.nes.region.fps();
         let now = Instant::now();
         let dt = now.duration_since(self.last_frame).as_secs_f64();
         self.last_frame = now;
-        self.time_debt = (self.time_debt + dt).min(3.0 / NTSC_FPS);
+        self.time_debt = (self.time_debt + dt).min(3.0 / fps);
         let mut frames = 0;
-        while self.time_debt >= 1.0 / NTSC_FPS && frames < 3 {
-            self.time_debt -= 1.0 / NTSC_FPS;
+        while self.time_debt >= 1.0 / fps && frames < 3 {
+            self.time_debt -= 1.0 / fps;
             frames += 1;
         }
         if self.fast_forward {
@@ -339,8 +338,20 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let mut rom_path: Option<PathBuf> = None;
     let mut scale = 3u32;
+    let mut region: Option<Region> = None;
     while let Some(a) = args.next() {
         match a.as_str() {
+            "--region" => {
+                region = match args.next().as_deref() {
+                    Some("pal") => Some(Region::Pal),
+                    Some("dendy") => Some(Region::Dendy),
+                    Some("ntsc") => Some(Region::Ntsc),
+                    _ => {
+                        eprintln!("--region 取 ntsc|pal|dendy");
+                        std::process::exit(2);
+                    }
+                };
+            }
             "--scale" => {
                 scale = args
                     .next()
@@ -351,7 +362,7 @@ fn main() {
                     });
             }
             "--help" | "-h" => {
-                println!("用法: nes <rom.nes> [--scale N]");
+                println!("用法: nes <rom.nes> [--scale N] [--region ntsc|pal|dendy]");
                 return;
             }
             _ => rom_path = Some(PathBuf::from(a)),
@@ -365,7 +376,7 @@ fn main() {
         eprintln!("读取 {} 失败: {e}", rom_path.display());
         std::process::exit(2);
     });
-    let mut nes = Nes::insert(&rom).unwrap_or_else(|e| {
+    let mut nes = Nes::insert_with_region(&rom, region).unwrap_or_else(|e| {
         eprintln!("加载 ROM 失败: {e}");
         std::process::exit(2);
     });

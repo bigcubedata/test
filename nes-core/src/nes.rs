@@ -14,6 +14,24 @@ pub const FRAME_H: usize = H;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Region {
     Ntsc,
+    Pal,
+    Dendy,
+}
+
+impl Region {
+    pub fn cpu_hz(self) -> f64 {
+        match self {
+            Region::Ntsc => 1_789_772.7,
+            Region::Pal => 1_662_607.0,
+            Region::Dendy => 1_773_447.5,
+        }
+    }
+    pub fn fps(self) -> f64 {
+        match self {
+            Region::Ntsc => 60.0988,
+            Region::Pal | Region::Dendy => 50.007,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,11 +85,22 @@ pub struct Nes {
     open_bus: u8,
     pub cycles: u64,
     pub region: Region,
+    /// PAL:每 5 个 CPU 周期第 5 个走 4 个 dot(3.2:1)
+    pal_phase: u8,
 }
 
 impl Nes {
     pub fn insert(rom: &[u8]) -> Result<Nes, RomError> {
+        Nes::insert_with_region(rom, None)
+    }
+
+    pub fn insert_with_region(rom: &[u8], region: Option<Region>) -> Result<Nes, RomError> {
         let cart = Cartridge::parse(rom)?;
+        let region = region.unwrap_or(if cart.info.pal_hint {
+            Region::Pal
+        } else {
+            Region::Ntsc
+        });
         let mut nes = Nes {
             cpu: Cpu::default(),
             ppu: Ppu::default(),
@@ -82,8 +111,25 @@ impl Nes {
             ciram: vec![0; 0x800],
             open_bus: 0,
             cycles: 0,
-            region: Region::Ntsc,
+            region,
+            pal_phase: 0,
         };
+        match region {
+            Region::Ntsc => {}
+            Region::Pal => {
+                nes.ppu.total_lines = 312;
+                nes.ppu.vblank_line = 241;
+                nes.ppu.prerender_line = 311;
+                nes.ppu.skip_odd_dot = false;
+            }
+            Region::Dendy => {
+                nes.ppu.total_lines = 312;
+                nes.ppu.vblank_line = 291;
+                nes.ppu.prerender_line = 311;
+                nes.ppu.skip_odd_dot = false;
+            }
+        }
+        nes.apu.set_region(region);
         nes.cpu_reset();
         Ok(nes)
     }
@@ -91,7 +137,12 @@ impl Nes {
     /// 软复位(Reset 键)。
     pub fn reset(&mut self) {
         self.ppu.soft_reset();
-        self.apu.write(0x4015, 0, self.cycles);
+        // 硬件顺序:$4017 重写 → 9-12 周期延迟(3 + 复位序列 7)→ 复位向量
+        let c = self.cycles;
+        self.apu.reset(c);
+        self.tick();
+        self.tick();
+        self.tick();
         self.cpu_reset();
     }
 
@@ -120,8 +171,16 @@ impl Nes {
     }
 
     /// CPU 周期后半:第 3 个 dot、APU、mapper,周期末采样中断线。
+    /// PAL 的 16:5 分频(3.2 dot/周期)通过每第 5 个周期多走一个 dot 实现。
     fn tick_end(&mut self) {
         self.ppu_step();
+        if self.region == Region::Pal {
+            self.pal_phase += 1;
+            if self.pal_phase >= 5 {
+                self.pal_phase = 0;
+                self.ppu_step();
+            }
+        }
         let expansion = self.cart.mapper.audio();
         self.apu.step(expansion);
         self.cart.mapper.cpu_tick();

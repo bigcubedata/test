@@ -67,6 +67,11 @@ pub struct Ppu {
     pub fb: Vec<u16>, // 256*240,值 = 强调位<<6 | 调色板值
     pub frame_ready: bool,
     pub palette: [u8; 32],
+    // 区制参数
+    pub total_lines: u16,   // 262 / 312
+    pub vblank_line: u16,   // 241(NTSC/PAL)/ 291(Dendy)
+    pub prerender_line: u16, // 261 / 311
+    pub skip_odd_dot: bool, // 仅 NTSC
 }
 
 impl Default for Ppu {
@@ -116,6 +121,10 @@ impl Default for Ppu {
             spr_count: 0,
             fb: vec![0; W * H],
             frame_ready: false,
+            total_lines: 262,
+            vblank_line: 241,
+            prerender_line: 261,
+            skip_odd_dot: true,
             palette: [
                 // 上电近似值,无关紧要
                 0x09, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x0D, 0x08, 0x10, 0x08, 0x24, 0x00,
@@ -273,7 +282,7 @@ impl Nes {
                 let vbl = self.ppu.vblank;
                 // 恰在置位前 1 dot 读:本帧 vblank 标志被整个抹除(读到 clear 且无 NMI)。
                 // 置位后 0/+1 dot 读的 NMI 抑制由"读清标志 → 周期末采不到边沿"自然产生。
-                if self.ppu.scanline == 241 && self.ppu.dot == 1 {
+                if self.ppu.scanline == self.ppu.vblank_line && self.ppu.dot == 1 {
                     self.ppu.suppress_vbl = true;
                 }
                 let val = (vbl as u8) << 7
@@ -287,7 +296,7 @@ impl Nes {
             }
             4 => {
                 let val = if self.ppu.rendering()
-                    && (self.ppu.scanline < 240 || self.ppu.scanline == 261)
+                    && (self.ppu.scanline < 240 || self.ppu.scanline == self.ppu.prerender_line)
                     && (1..=64).contains(&self.ppu.dot)
                 {
                     0xFF // 次级 OAM 清空窗口
@@ -343,7 +352,7 @@ impl Nes {
             3 => self.ppu.oam_addr = val,
             4 => {
                 let rendering_now = self.ppu.rendering()
-                    && (self.ppu.scanline < 240 || self.ppu.scanline == 261);
+                    && (self.ppu.scanline < 240 || self.ppu.scanline == self.ppu.prerender_line);
                 if rendering_now {
                     // 渲染期写 OAM:数据丢失,地址高位 +4(硬件 glitch)
                     self.ppu.oam_addr = self.ppu.oam_addr.wrapping_add(4);
@@ -389,7 +398,7 @@ impl Nes {
 
     fn increment_v(&mut self) {
         let rendering_now =
-            self.ppu.rendering() && (self.ppu.scanline < 240 || self.ppu.scanline == 261);
+            self.ppu.rendering() && (self.ppu.scanline < 240 || self.ppu.scanline == self.ppu.prerender_line);
         if rendering_now {
             // 渲染期访问 $2007:粗 X 与 Y 同时递增(硬件怪癖)
             self.ppu.inc_coarse_x();
@@ -410,40 +419,32 @@ impl Nes {
         let dot = self.ppu.dot;
         let rendering = self.ppu.rendering();
 
-        match sl {
-            0..=239 => {
-                if rendering {
-                    self.render_line_dot(sl, dot, false);
+        if sl < 240 {
+            if rendering {
+                self.render_line_dot(sl, dot, false);
+            } else if (1..=256).contains(&dot) {
+                self.output_pixel_blank(sl, dot);
+            }
+        } else if sl == self.ppu.vblank_line {
+            if dot == 1 {
+                if !self.ppu.suppress_vbl {
+                    self.ppu.vblank = true;
                 }
-                if dot >= 1 && dot <= 256 && sl < 240 {
-                    if !rendering {
-                        self.output_pixel_blank(sl, dot);
-                    }
+                self.ppu.suppress_vbl = false;
+                self.ppu.frame_ready = true;
+            }
+        } else if sl == self.ppu.prerender_line {
+            if dot == 1 {
+                self.ppu.vblank = false;
+                self.ppu.sprite0_hit = false;
+                self.ppu.sprite_overflow = false;
+            }
+            if rendering {
+                self.render_line_dot(sl, dot, true);
+                if (280..=304).contains(&dot) {
+                    self.ppu.copy_vertical();
                 }
             }
-            241 => {
-                if dot == 1 {
-                    if !self.ppu.suppress_vbl {
-                        self.ppu.vblank = true;
-                    }
-                    self.ppu.suppress_vbl = false;
-                    self.ppu.frame_ready = true;
-                }
-            }
-            261 => {
-                if dot == 1 {
-                    self.ppu.vblank = false;
-                    self.ppu.sprite0_hit = false;
-                    self.ppu.sprite_overflow = false;
-                }
-                if rendering {
-                    self.render_line_dot(sl, dot, true);
-                    if (280..=304).contains(&dot) {
-                        self.ppu.copy_vertical();
-                    }
-                }
-            }
-            _ => {}
         }
 
         // 本 dot 的取数已更新总线地址;向 mapper 汇报(A12 波形)
@@ -457,11 +458,11 @@ impl Nes {
         if self.ppu.dot > 340 {
             self.ppu.dot = 0;
             self.ppu.scanline += 1;
-            if self.ppu.scanline > 261 {
+            if self.ppu.scanline >= self.ppu.total_lines {
                 self.ppu.scanline = 0;
                 self.ppu.frame += 1;
                 self.ppu.odd_frame = !self.ppu.odd_frame;
-                if self.ppu.odd_frame && self.ppu.rendering() {
+                if self.ppu.skip_odd_dot && self.ppu.odd_frame && self.ppu.rendering() {
                     self.ppu.dot = 1;
                 }
             }

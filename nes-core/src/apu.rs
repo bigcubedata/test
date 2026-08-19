@@ -4,6 +4,7 @@
 //! 输出:每周期产生原始样本 → 分数步长箱式抽取到目标采样率 → 高/低通滤波。
 //! 重采样比可被外壳微调(音频主时钟的动态速率控制)。
 
+use crate::nes::Region;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
@@ -16,8 +17,16 @@ const NOISE_PERIODS: [u16; 16] = [
     4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068,
 ];
 
+const NOISE_PERIODS_PAL: [u16; 16] = [
+    4, 8, 14, 30, 60, 88, 118, 148, 188, 236, 354, 472, 708, 944, 1890, 3778,
+];
+
 const DMC_RATES: [u16; 16] = [
     428, 380, 340, 320, 286, 254, 226, 214, 190, 160, 142, 128, 106, 84, 72, 54,
+];
+
+const DMC_RATES_PAL: [u16; 16] = [
+    398, 354, 316, 298, 276, 236, 210, 198, 176, 148, 132, 118, 98, 78, 66, 50,
 ];
 
 const DUTY: [[u8; 8]; 4] = [
@@ -276,6 +285,7 @@ impl Noise {
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct Dmc {
+    pub pal: bool,
     irq_enable: bool,
     pub irq_flag: bool,
     looped: bool,
@@ -297,7 +307,8 @@ pub struct Dmc {
 impl Dmc {
     fn tick_timer(&mut self) {
         if self.timer == 0 {
-            self.timer = DMC_RATES[self.rate_index as usize] - 1;
+            let table = if self.pal { &DMC_RATES_PAL } else { &DMC_RATES };
+            self.timer = table[self.rate_index as usize] - 1;
             if !self.silence {
                 if self.shift & 1 != 0 {
                     if self.output_level <= 125 {
@@ -367,6 +378,7 @@ struct Resampler {
     hp2_y: f32,
     lp_y: f32,
     sample_rate: f64,
+    cpu_hz: f64,
 }
 
 impl Default for Resampler {
@@ -383,18 +395,17 @@ impl Default for Resampler {
             hp2_y: 0.0,
             lp_y: 0.0,
             sample_rate: 48000.0,
+            cpu_hz: 1_789_772.7,
         };
         r.set_rate(48000.0);
         r
     }
 }
 
-const CPU_HZ: f64 = 1_789_772.7;
-
 impl Resampler {
     fn set_rate(&mut self, rate: f64) {
         self.sample_rate = rate;
-        self.cycles_per_sample = CPU_HZ / rate;
+        self.cycles_per_sample = self.cpu_hz / rate;
     }
 
     fn coef_hp(&self, cutoff: f64) -> f32 {
@@ -454,7 +465,9 @@ pub struct Apu {
     fc_write_pending: Option<u8>,
     fc_write_delay: u8,
     odd_cycle: bool,
+    last_4017: u8,
     resampler: Resampler,
+    region: Region,
     #[serde(skip)]
     pub out: Vec<i16>,
 }
@@ -477,7 +490,9 @@ impl Default for Apu {
             fc_write_pending: None,
             fc_write_delay: 0,
             odd_cycle: false,
+            last_4017: 0,
             resampler: Resampler::default(),
+            region: Region::Ntsc,
             out: Vec::new(),
         };
         a.dmc.timer = DMC_RATES[0] - 1;
@@ -492,6 +507,25 @@ impl Apu {
 
     pub fn set_sample_rate(&mut self, rate: f64) {
         self.resampler.set_rate(rate);
+    }
+
+    /// 软复位(blargg apu_reset 语义):
+    /// 长度计数器使能位置位、脉冲/噪声长度清零、三角形长度保留;
+    /// 帧 IRQ 与 DMC IRQ 清除;$4017 以上次写入值重写。
+    pub fn reset(&mut self, cpu_cycles: u64) {
+        self.write(0x4015, 0, cpu_cycles);
+        self.fc_irq = false;
+        self.dmc.irq_flag = false;
+        let last = self.last_4017;
+        self.write(0x4017, last, cpu_cycles);
+    }
+
+    pub fn set_region(&mut self, region: Region) {
+        self.region = region;
+        self.dmc.pal = region == Region::Pal;
+        self.resampler.cpu_hz = region.cpu_hz();
+        let r = self.resampler.sample_rate;
+        self.resampler.set_rate(r);
     }
 
     /// 动态速率控制:1.0 = 标称;>1 略慢消耗(缓冲偏满时用)。
@@ -538,17 +572,23 @@ impl Apu {
 
         // 帧计数器(CPU 周期表,NTSC)
         self.fc_counter += 1;
+        let pal = self.region == Region::Pal;
+        let (q1, h1, q2, irq0, irq1, irq2, m5h, m5w) = if pal {
+            (8313, 16627, 24939, 33252, 33253, 33254, 41565, 41566)
+        } else {
+            (7457, 14913, 22371, 29828, 29829, 29830, 37281, 37282)
+        };
         if !self.fc_mode5 {
             match self.fc_counter {
-                7457 => self.quarter(),
-                14913 => self.half(),
-                22371 => self.quarter(),
-                29828 => self.set_frame_irq(),
-                29829 => {
+                c if c == q1 => self.quarter(),
+                c if c == h1 => self.half(),
+                c if c == q2 => self.quarter(),
+                c if c == irq0 => self.set_frame_irq(),
+                c if c == irq1 => {
                     self.half();
                     self.set_frame_irq();
                 }
-                29830 => {
+                c if c == irq2 => {
                     self.set_frame_irq();
                     self.fc_counter = 0;
                 }
@@ -556,11 +596,11 @@ impl Apu {
             }
         } else {
             match self.fc_counter {
-                7457 => self.quarter(),
-                14913 => self.half(),
-                22371 => self.quarter(),
-                37281 => self.half(),
-                37282 => self.fc_counter = 0,
+                c if c == q1 => self.quarter(),
+                c if c == h1 => self.half(),
+                c if c == q2 => self.quarter(),
+                c if c == m5h => self.half(),
+                c if c == m5w => self.fc_counter = 0,
                 _ => {}
             }
         }
@@ -658,7 +698,12 @@ impl Apu {
             }
             0x400E => {
                 self.noise.mode = val & 0x80 != 0;
-                self.noise.timer_period = NOISE_PERIODS[(val & 0x0F) as usize];
+                let table = if self.region == Region::Pal {
+                    &NOISE_PERIODS_PAL
+                } else {
+                    &NOISE_PERIODS
+                };
+                self.noise.timer_period = table[(val & 0x0F) as usize];
             }
             0x400F => {
                 if self.noise.enabled {
@@ -708,6 +753,7 @@ impl Apu {
                 }
             }
             0x4017 => {
+                self.last_4017 = val;
                 self.fc_irq_inhibit = val & 0x40 != 0;
                 if self.fc_irq_inhibit {
                     self.fc_irq = false;
