@@ -237,7 +237,9 @@ impl Nes {
     fn ppu_bus_read(&mut self, addr: u16) -> u8 {
         let addr = addr & 0x3FFF;
         self.ppu.bus_addr = addr;
-        self.cart.mapper.ppu_addr_notify(addr, self.ppu.ppu_cycles);
+        if self.mapper_wants_notify {
+            self.cart.mapper.ppu_addr_notify(addr, self.ppu.ppu_cycles);
+        }
         if addr < 0x2000 {
             self.cart.chr_read(addr)
         } else {
@@ -256,7 +258,9 @@ impl Nes {
     fn ppu_bus_write(&mut self, addr: u16, val: u8) {
         let addr = addr & 0x3FFF;
         self.ppu.bus_addr = addr;
-        self.cart.mapper.ppu_addr_notify(addr, self.ppu.ppu_cycles);
+        if self.mapper_wants_notify {
+            self.cart.mapper.ppu_addr_notify(addr, self.ppu.ppu_cycles);
+        }
         if addr < 0x2000 {
             self.cart.chr_write(addr, val);
         } else {
@@ -447,9 +451,11 @@ impl Nes {
             }
         }
 
-        // 本 dot 的取数已更新总线地址;向 mapper 汇报(A12 波形)
-        let ba = self.ppu.bus_addr;
-        self.cart.mapper.ppu_dot(ba);
+        // 本 dot 的取数已更新总线地址;向需要 A12 波形的 mapper 汇报
+        if self.mapper_wants_dot {
+            let ba = self.ppu.bus_addr;
+            self.cart.mapper.ppu_dot(ba);
+        }
 
         // 位置推进。奇帧渲染开启时预渲染行短 1 dot:
         // 判定发生在处理完 (261,340) 回卷之际(blargg 10-even_odd_timing 校准),

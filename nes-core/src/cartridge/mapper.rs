@@ -357,6 +357,17 @@ impl Mapper {
     pub fn ppu_dot(&mut self, bus_addr: u16) {
         delegate!(self, m => m.ppu_dot(bus_addr))
     }
+    /// 是否需要逐 dot 的 A12 波形(热路径优化:多数 mapper 直接跳过)。
+    pub fn wants_ppu_dot(&self) -> bool {
+        matches!(
+            self,
+            Mapper::Mmc3(_) | Mapper::Taito33(_) | Mapper::Nanjing163(_)
+        )
+    }
+    /// 是否需要每次 PPU 总线读的通知(MMC2/MMC4 latch、MMC5 取数流)。
+    pub fn wants_ppu_notify(&self) -> bool {
+        matches!(self, Mapper::Mmc2(_) | Mapper::Mmc5(_))
+    }
     pub fn ppu_ctrl_update(&mut self, ctrl: u8, mask: u8) {
         delegate!(self, m => m.ppu_ctrl_update(ctrl, mask))
     }

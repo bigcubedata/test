@@ -87,6 +87,9 @@ pub struct Nes {
     pub region: Region,
     /// PAL:每 5 个 CPU 周期第 5 个走 4 个 dot(3.2:1)
     pal_phase: u8,
+    /// 热路径缓存:mapper 是否需要逐 dot A12 汇报
+    pub(crate) mapper_wants_dot: bool,
+    pub(crate) mapper_wants_notify: bool,
 }
 
 impl Nes {
@@ -113,6 +116,8 @@ impl Nes {
             cycles: 0,
             region,
             pal_phase: 0,
+            mapper_wants_dot: false,
+            mapper_wants_notify: false,
         };
         match region {
             Region::Ntsc => {}
@@ -130,6 +135,8 @@ impl Nes {
             }
         }
         nes.apu.set_region(region);
+        nes.mapper_wants_dot = nes.cart.mapper.wants_ppu_dot();
+        nes.mapper_wants_notify = nes.cart.mapper.wants_ppu_notify();
         nes.cpu_reset();
         Ok(nes)
     }
@@ -406,6 +413,8 @@ impl Nes {
             new.ppu.fb = vec![0; W * H];
         }
         new.apu.out = Vec::new();
+        new.mapper_wants_dot = new.cart.mapper.wants_ppu_dot();
+        new.mapper_wants_notify = new.cart.mapper.wants_ppu_notify();
         *self = new;
         Ok(())
     }
