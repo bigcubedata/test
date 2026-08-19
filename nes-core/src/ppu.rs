@@ -4,7 +4,7 @@
 //! loopy v/t/x/w 全模型;背景 8-dot 取数节奏;精灵评估状态机(含 overflow 硬件 bug);
 //! sprite 0 hit 精确到 dot;所有渲染取数走真实 PPU 总线(mapper 能看到 A12)。
 
-use crate::cartridge::Mirroring;
+use crate::cartridge::{NtRead, NtWrite};
 use crate::nes::Nes;
 use serde::{Deserialize, Serialize};
 
@@ -30,6 +30,8 @@ pub struct Ppu {
     pub open_bus: u8,
     /// 每一位最后被驱动的时刻(PPU dot 计),约 600ms 未刷新即衰减为 0
     ob_stamp: [u64; 8],
+    /// 当前保持在 PPU 地址总线上的地址(每 dot 供 mapper 观察 A12 波形)
+    pub bus_addr: u16,
     // 位置
     pub scanline: u16, // 0-239 可见,240 post,241-260 vblank,261 pre-render
     pub dot: u16,      // 0-340
@@ -84,6 +86,7 @@ impl Default for Ppu {
             read_buffer: 0,
             open_bus: 0,
             ob_stamp: [0; 8],
+            bus_addr: 0,
             scanline: 0,
             dot: 0,
             odd_frame: false,
@@ -224,46 +227,42 @@ impl Nes {
     /// 渲染与 $2007 的取数总线($0000-$3EFF;调色板不在总线上)。
     fn ppu_bus_read(&mut self, addr: u16) -> u8 {
         let addr = addr & 0x3FFF;
+        self.ppu.bus_addr = addr;
         self.cart.mapper.ppu_addr_notify(addr, self.ppu.ppu_cycles);
         if addr < 0x2000 {
             self.cart.chr_read(addr)
         } else {
-            let (page, off) = self.nt_resolve(addr);
-            if page < 2 {
-                self.ciram[page * 0x400 + off]
-            } else {
-                self.cart.ext_vram[(page - 2) * 0x400 + off]
+            match self.cart.mapper.nt_map(addr) {
+                NtRead::Ciram(p, o) => self.ciram[(p & 1) * 0x400 + o],
+                NtRead::Ext(p, o) => {
+                    let i = p * 0x400 + o;
+                    self.cart.ext_vram.get(i).copied().unwrap_or(0)
+                }
+                NtRead::Chr(i) => self.cart.chr_at(i),
+                NtRead::Value(v) => v,
             }
         }
     }
 
     fn ppu_bus_write(&mut self, addr: u16, val: u8) {
         let addr = addr & 0x3FFF;
+        self.ppu.bus_addr = addr;
         self.cart.mapper.ppu_addr_notify(addr, self.ppu.ppu_cycles);
         if addr < 0x2000 {
             self.cart.chr_write(addr, val);
         } else {
-            let (page, off) = self.nt_resolve(addr);
-            if page < 2 {
-                self.ciram[page * 0x400 + off] = val;
-            } else {
-                self.cart.ext_vram[(page - 2) * 0x400 + off] = val;
+            match self.cart.mapper.nt_write_map(addr, val) {
+                NtWrite::Ciram(p, o) => self.ciram[(p & 1) * 0x400 + o] = val,
+                NtWrite::Ext(p, o) => {
+                    let i = p * 0x400 + o;
+                    if i < self.cart.ext_vram.len() {
+                        self.cart.ext_vram[i] = val;
+                    }
+                }
+                NtWrite::Chr(i) => self.cart.chr_ram_write_at(i, val),
+                NtWrite::Handled => {}
             }
         }
-    }
-
-    fn nt_resolve(&self, addr: u16) -> (usize, usize) {
-        let a = (addr as usize - 0x2000) & 0xFFF;
-        let table = a / 0x400;
-        let off = a & 0x3FF;
-        let page = match self.cart.mirroring() {
-            Mirroring::Horizontal => table >> 1,
-            Mirroring::Vertical => table & 1,
-            Mirroring::SingleA => 0,
-            Mirroring::SingleB => 1,
-            Mirroring::FourScreen => table,
-        };
-        (page, off)
     }
 
     // ---------------- 寄存器接口($2000-$2007)----------------
@@ -333,8 +332,14 @@ impl Nes {
                 self.ppu.ctrl = val;
                 self.ppu.t = self.ppu.t & !0x0C00 | ((val & 3) as u16) << 10;
                 // NMI 使能的边沿由 tick 的电平检测自然产生
+                let (c, m) = (self.ppu.ctrl, self.ppu.mask);
+                self.cart.mapper.ppu_ctrl_update(c, m);
             }
-            1 => self.ppu.mask = val,
+            1 => {
+                self.ppu.mask = val;
+                let (c, m) = (self.ppu.ctrl, self.ppu.mask);
+                self.cart.mapper.ppu_ctrl_update(c, m);
+            }
             3 => self.ppu.oam_addr = val,
             4 => {
                 let rendering_now = self.ppu.rendering()
@@ -364,10 +369,8 @@ impl Nes {
                 } else {
                     self.ppu.t = self.ppu.t & 0xFF00 | val as u16;
                     self.ppu.v = self.ppu.t;
-                    // mapper 观察 v 直变(A12)
-                    let v = self.ppu.v;
-                    let cyc = self.ppu.ppu_cycles;
-                    self.cart.mapper.ppu_addr_notify(v & 0x3FFF, cyc);
+                    // v 直变出现在地址总线上(A12 波形经 ppu_dot 汇报)
+                    self.ppu.bus_addr = self.ppu.v & 0x3FFF;
                 }
                 self.ppu.w = !self.ppu.w;
             }
@@ -394,10 +397,8 @@ impl Nes {
         } else {
             let step = if self.ppu.ctrl & 0x04 != 0 { 32 } else { 1 };
             self.ppu.v = self.ppu.v.wrapping_add(step) & 0x7FFF;
-            // 递增后的地址会出现在 PPU 地址总线上(MMC3 的 A12 能看到)
-            let v = self.ppu.v;
-            let cyc = self.ppu.ppu_cycles;
-            self.cart.mapper.ppu_addr_notify(v & 0x3FFF, cyc);
+            // 递增后的地址保持在 PPU 地址总线上(MMC3 的 A12 能看到)
+            self.ppu.bus_addr = self.ppu.v & 0x3FFF;
         }
     }
 
@@ -444,6 +445,10 @@ impl Nes {
             }
             _ => {}
         }
+
+        // 本 dot 的取数已更新总线地址;向 mapper 汇报(A12 波形)
+        let ba = self.ppu.bus_addr;
+        self.cart.mapper.ppu_dot(ba);
 
         // 位置推进。奇帧渲染开启时预渲染行短 1 dot:
         // 判定发生在处理完 (261,340) 回卷之际(blargg 10-even_odd_timing 校准),
@@ -551,17 +556,17 @@ impl Nes {
             let unit = ((dot - 257) / 8) as usize;
             let sub = (dot - 257) % 8;
             match sub {
-                1 | 3 => {
-                    // 垃圾 NT 取数(维持总线节奏)
+                0 | 2 => {
+                    // 垃圾 NT 取数(维持总线节奏;地址在窗口首 dot 上总线)
                     let a = 0x2000 | self.ppu.v & 0x0FFF;
                     self.ppu_bus_read(a);
                 }
-                5 => {
+                4 => {
                     let a = self.sprite_pattern_addr(sl, unit, false);
                     let v = self.ppu_bus_read(a);
                     self.ppu.spr_pat_lo[unit] = self.finish_sprite_fetch(unit, v);
                 }
-                7 => {
+                6 => {
                     let a = self.sprite_pattern_addr(sl, unit, true);
                     let v = self.ppu_bus_read(a);
                     self.ppu.spr_pat_hi[unit] = self.finish_sprite_fetch(unit, v);

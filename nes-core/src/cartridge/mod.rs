@@ -5,9 +5,14 @@
 
 mod mapper;
 mod mmc1;
+mod mmc2;
 mod mmc3;
+mod mmc5;
+mod namco;
+mod sunsoft;
+mod vrc;
 
-pub use mapper::{ChrTarget, Mapper, MapperImpl, PrgTarget, PrgWrite};
+pub use mapper::{ChrTarget, Mapper, MapperImpl, NtRead, NtWrite, PrgTarget, PrgWrite};
 
 use serde::{Deserialize, Serialize};
 
@@ -114,6 +119,7 @@ impl Cartridge {
             if prg_ram_len == 0 {
                 prg_ram_len = 8 * 1024; // 容错:不少 NES2.0 头忘填
             }
+            prg_ram_len = prg_ram_len.max(1024);
             let cshift = rom[11] & 0x0F;
             if cshift > 0 {
                 chr_ram_len = 64usize << cshift;
@@ -124,6 +130,10 @@ impl Cartridge {
             if rom[12] | rom[13] | rom[14] | rom[15] != 0 {
                 mapper &= 0x0F;
             }
+        }
+        // MMC5/FME-7 可寻址最多 64KB PRG RAM
+        if matches!(mapper, 5 | 69) {
+            prg_ram_len = prg_ram_len.max(64 * 1024);
         }
         let battery = f6 & 0x02 != 0;
         let trainer = f6 & 0x04 != 0;
@@ -266,5 +276,26 @@ impl Cartridge {
 
     pub fn mirroring(&self) -> Mirroring {
         self.mapper.mirroring()
+    }
+
+    /// 原始 CHR 数据按绝对索引读(nametable-from-CHR 的 mapper 用)。
+    pub fn chr_at(&self, i: usize) -> u8 {
+        let mem = if self.chr_rom.is_empty() {
+            &self.chr_ram
+        } else {
+            &self.chr_rom
+        };
+        if mem.is_empty() {
+            0
+        } else {
+            mem[i % mem.len()]
+        }
+    }
+
+    pub fn chr_ram_write_at(&mut self, i: usize, val: u8) {
+        if !self.chr_ram.is_empty() {
+            let len = self.chr_ram.len();
+            self.chr_ram[i % len] = val;
+        }
     }
 }

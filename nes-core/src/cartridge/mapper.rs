@@ -2,7 +2,13 @@
 //!
 //! 枚举而非 trait object:serde 直接派生、无虚表开销、匹配分支可内联。
 
-use super::{mmc1::Mmc1, mmc3::Mmc3, Mirroring, RomError};
+use super::mmc2::Mmc2;
+use super::mmc3::{Mmc3, Mmc3Variant};
+use super::mmc5::Mmc5;
+use super::namco::{Namco108, N163, N175};
+use super::sunsoft::{Fme7, Sunsoft3, Sunsoft4};
+use super::vrc::{Vrc24, Vrc6};
+use super::{mmc1::Mmc1, Mirroring, RomError};
 use serde::{Deserialize, Serialize};
 
 /// CPU $4020-$FFFF 的翻译结果。
@@ -25,6 +31,37 @@ pub enum PrgWrite {
     Ram(usize),
 }
 
+/// Nametable 读地址翻译(MMC5/N163/Sunsoft-4 可指到 ExRAM/CHR/填充值)。
+pub enum NtRead {
+    Ciram(usize, usize),
+    Ext(usize, usize),
+    Chr(usize),
+    Value(u8),
+}
+
+/// Nametable 写翻译。
+pub enum NtWrite {
+    Ciram(usize, usize),
+    Ext(usize, usize),
+    Chr(usize),
+    Handled,
+}
+
+/// 头部镜像的标准翻译。
+pub fn standard_nt(m: Mirroring, addr: u16) -> (usize, usize) {
+    let a = (addr as usize).wrapping_sub(0x2000) & 0xFFF;
+    let table = a / 0x400;
+    let off = a & 0x3FF;
+    let page = match m {
+        Mirroring::Horizontal => table >> 1,
+        Mirroring::Vertical => table & 1,
+        Mirroring::SingleA => 0,
+        Mirroring::SingleB => 1,
+        Mirroring::FourScreen => table,
+    };
+    (page, off)
+}
+
 pub trait MapperImpl {
     /// 读地址翻译(允许副作用;无副作用的 mapper 直接转发 peek)。
     fn cpu_map(&mut self, addr: u16) -> PrgTarget {
@@ -36,8 +73,29 @@ pub trait MapperImpl {
     fn mirroring(&self) -> Mirroring;
     /// 每个 CPU 周期一次(VRC/FME-7 类 IRQ 计数)。
     fn cpu_tick(&mut self) {}
-    /// PPU 总线每次出现地址时通知(MMC3 A12、MMC2 latch 等)。
+    /// PPU 总线每次真实读写时通知(MMC2/MMC4 latch、MMC5 取数流)。
     fn ppu_addr_notify(&mut self, _addr: u16, _ppu_cycle: u64) {}
+    /// 每个 PPU dot 一次,携带当前保持在地址总线上的地址(MMC3 的 A12 波形)。
+    fn ppu_dot(&mut self, _bus_addr: u16) {}
+    /// $2000/$2001 写入时同步(MMC5 需要精灵尺寸与渲染开关)。
+    fn ppu_ctrl_update(&mut self, _ctrl: u8, _mask: u8) {}
+    /// Nametable 翻译;默认按 mirroring()。
+    fn nt_map(&mut self, addr: u16) -> NtRead {
+        let (p, o) = standard_nt(self.mirroring(), addr);
+        if p < 2 {
+            NtRead::Ciram(p, o)
+        } else {
+            NtRead::Ext(p - 2, o)
+        }
+    }
+    fn nt_write_map(&mut self, addr: u16, _val: u8) -> NtWrite {
+        let (p, o) = standard_nt(self.mirroring(), addr);
+        if p < 2 {
+            NtWrite::Ciram(p, o)
+        } else {
+            NtWrite::Ext(p - 2, o)
+        }
+    }
     fn irq_asserted(&self) -> bool {
         false
     }
@@ -58,6 +116,16 @@ pub enum Mapper {
     Gxrom(Gxrom),
     ColorDreams(ColorDreams),
     Camerica(Camerica),
+    Mmc2(Mmc2),
+    Mmc5(Mmc5),
+    N163(N163),
+    N175(N175),
+    Namco108(Namco108),
+    Fme7(Fme7),
+    Sunsoft3(Sunsoft3),
+    Sunsoft4(Sunsoft4),
+    Vrc24(Vrc24),
+    Vrc6(Vrc6),
 }
 
 macro_rules! delegate {
@@ -72,6 +140,16 @@ macro_rules! delegate {
             Mapper::Gxrom($m) => $e,
             Mapper::ColorDreams($m) => $e,
             Mapper::Camerica($m) => $e,
+            Mapper::Mmc2($m) => $e,
+            Mapper::Mmc5($m) => $e,
+            Mapper::N163($m) => $e,
+            Mapper::N175($m) => $e,
+            Mapper::Namco108($m) => $e,
+            Mapper::Fme7($m) => $e,
+            Mapper::Sunsoft3($m) => $e,
+            Mapper::Sunsoft4($m) => $e,
+            Mapper::Vrc24($m) => $e,
+            Mapper::Vrc6($m) => $e,
         }
     };
 }
@@ -116,7 +194,7 @@ impl Mapper {
                 conflicts: submapper != 1,
                 mirroring: header_mirroring,
             }),
-            4 => Mapper::Mmc3(Mmc3::new(prg_len, header_mirroring)),
+            4 => Mapper::Mmc3(Mmc3::new(prg_len, submapper, header_mirroring)),
             7 => Mapper::Axrom(Axrom {
                 prg_len,
                 chr_ram,
@@ -144,6 +222,37 @@ impl Mapper {
                 mirroring: header_mirroring,
                 fire_hawk: submapper == 1,
             }),
+            5 => Mapper::Mmc5(Mmc5::new(prg_len, chr_len)),
+            9 => Mapper::Mmc2(Mmc2::new(false, prg_len, chr_len)),
+            10 => Mapper::Mmc2(Mmc2::new(true, prg_len, chr_len)),
+            19 => Mapper::N163(N163::new(prg_len, chr_len)),
+            210 => Mapper::N175(N175::new(
+                prg_len,
+                chr_len,
+                header_mirroring,
+                submapper != 1,
+            )),
+            21 | 22 | 23 | 25 => Mapper::Vrc24(Vrc24::new(number, prg_len, chr_len)),
+            24 | 26 => Mapper::Vrc6(Vrc6::new(number, prg_len, chr_len)),
+            67 => Mapper::Sunsoft3(Sunsoft3::new(prg_len, chr_len)),
+            68 => Mapper::Sunsoft4(Sunsoft4::new(prg_len, chr_len)),
+            69 => Mapper::Fme7(Fme7::new(prg_len, chr_len)),
+            76 | 88 | 95 | 154 | 206 => Mapper::Namco108(Namco108::new(
+                number,
+                prg_len,
+                chr_len,
+                header_mirroring,
+            )),
+            118 => {
+                let mut m = Mmc3::new(prg_len, submapper, header_mirroring);
+                m.variant = Mmc3Variant::TxSrom;
+                Mapper::Mmc3(m)
+            }
+            119 => {
+                let mut m = Mmc3::new(prg_len, submapper, header_mirroring);
+                m.variant = Mmc3Variant::TqRom;
+                Mapper::Mmc3(m)
+            }
             n => return Err(RomError::UnsupportedMapper(n)),
         })
     }
@@ -168,6 +277,18 @@ impl Mapper {
     }
     pub fn ppu_addr_notify(&mut self, addr: u16, ppu_cycle: u64) {
         delegate!(self, m => m.ppu_addr_notify(addr, ppu_cycle))
+    }
+    pub fn ppu_dot(&mut self, bus_addr: u16) {
+        delegate!(self, m => m.ppu_dot(bus_addr))
+    }
+    pub fn ppu_ctrl_update(&mut self, ctrl: u8, mask: u8) {
+        delegate!(self, m => m.ppu_ctrl_update(ctrl, mask))
+    }
+    pub fn nt_map(&mut self, addr: u16) -> NtRead {
+        delegate!(self, m => m.nt_map(addr))
+    }
+    pub fn nt_write_map(&mut self, addr: u16, val: u8) -> NtWrite {
+        delegate!(self, m => m.nt_write_map(addr, val))
     }
     pub fn irq_asserted(&self) -> bool {
         delegate!(self, m => m.irq_asserted())

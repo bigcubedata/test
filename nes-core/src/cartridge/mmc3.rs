@@ -1,14 +1,24 @@
 //! Mapper 4: MMC3/MMC6。八个 bank 寄存器、两种 PRG/CHR 布局、
 //! 基于真实 A12 上升沿(带低电平时长滤波)的扫描线 IRQ。
 
-use super::mapper::{ChrTarget, MapperImpl, PrgTarget, PrgWrite};
+use super::mapper::{ChrTarget, MapperImpl, NtRead, NtWrite, PrgTarget, PrgWrite};
 use super::Mirroring;
 use serde::{Deserialize, Serialize};
 
-/// A12 在计数前必须保持低电平的最短 PPU dot 数。
-/// 精灵取数窗口内的高电平脉冲间隔(约 4 dots)不会重复计数,
-/// 而每条扫描线一次的 bg→sprite 表切换(低电平持续百余 dots)正常计数。
-const A12_FILTER_DOTS: u64 = 10;
+/// MMC3 板变体。
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Mmc3Variant {
+    Normal,
+    /// 118:nametable 由 CHR bank 寄存器 bit7 控制
+    TxSrom,
+    /// 119:CHR bank bit6 选 8K CHR RAM
+    TqRom,
+}
+
+/// A12 上升沿计数前必须保持低电平的最短 PPU dot 数(波形滤波)。
+/// 取数节奏里 NT+AT 的 4-dot 低间隙不计数;行首(8-dot 低)与
+/// 精灵窗切换(几十 dot 低)正常计数。
+const A12_FILTER_LOW_DOTS: u16 = 5;
 
 #[derive(Serialize, Deserialize)]
 pub struct Mmc3 {
@@ -24,12 +34,16 @@ pub struct Mmc3 {
     irq_reload: bool,
     irq_enabled: bool,
     irq_pending: bool,
-    a12_high: bool,
-    a12_low_since: u64,
+    /// MMC3 rev-A / MMC6 的"旧"IRQ 行为:仅在计数值由非 0 递减到 0
+    /// (或强制重装)时触发,latch=0 时不反复触发
+    alt_irq: bool,
+    a12_prev_high: bool,
+    a12_low_run: u16,
+    pub variant: Mmc3Variant,
 }
 
 impl Mmc3 {
-    pub fn new(prg_len: usize, header_mirroring: Mirroring) -> Mmc3 {
+    pub fn new(prg_len: usize, submapper: u8, header_mirroring: Mirroring) -> Mmc3 {
         Mmc3 {
             prg_len,
             regs: [0; 8],
@@ -47,9 +61,24 @@ impl Mmc3 {
             irq_reload: false,
             irq_enabled: false,
             irq_pending: false,
-            a12_high: false,
-            a12_low_since: 0,
+            // NES 2.0:submapper 1 = MMC6,4 = MMC3A(旧行为)
+            alt_irq: submapper == 1 || submapper == 4,
+            a12_prev_high: false,
+            a12_low_run: 0,
+            variant: Mmc3Variant::Normal,
         }
+    }
+
+    /// TxSROM:各 nametable 的页来自对应 CHR 寄存器的 bit7。
+    fn txsrom_page(&self, addr: u16) -> usize {
+        let table = ((addr as usize - 0x2000) & 0xFFF) / 0x400;
+        let reg = if self.bank_select & 0x80 == 0 {
+            // 2K 组在 $0000:R0 管 NT0/1,R1 管 NT2/3
+            self.regs[table >> 1]
+        } else {
+            self.regs[2 + table]
+        };
+        (reg >> 7) as usize
     }
 
     fn prg_banks(&self) -> usize {
@@ -57,13 +86,20 @@ impl Mmc3 {
     }
 
     fn clock_irq(&mut self) {
+        let was = self.irq_counter;
+        let forced = self.irq_reload;
         if self.irq_counter == 0 || self.irq_reload {
             self.irq_counter = self.irq_latch;
             self.irq_reload = false;
         } else {
             self.irq_counter -= 1;
         }
-        if self.irq_counter == 0 && self.irq_enabled {
+        let fire = if self.alt_irq {
+            self.irq_counter == 0 && (was != 0 || forced)
+        } else {
+            self.irq_counter == 0
+        };
+        if fire && self.irq_enabled {
             self.irq_pending = true;
         }
     }
@@ -162,35 +198,68 @@ impl MapperImpl for Mmc3 {
         let a = addr as usize;
         let invert = (self.bank_select & 0x80 != 0) as usize * 0x1000;
         let eff = a ^ invert;
-        let bank = match eff >> 10 {
+        let (reg, i) = match eff >> 10 {
             // $0000-$0FFF(逻辑):两个 2KB bank,寄存器低位忽略
-            0 | 1 => (self.regs[0] & 0xFE) as usize * 0x400 + (eff & 0x7FF),
-            2 | 3 => (self.regs[1] & 0xFE) as usize * 0x400 + (eff & 0x7FF),
-            4 => self.regs[2] as usize * 0x400 + (eff & 0x3FF),
-            5 => self.regs[3] as usize * 0x400 + (eff & 0x3FF),
-            6 => self.regs[4] as usize * 0x400 + (eff & 0x3FF),
-            _ => self.regs[5] as usize * 0x400 + (eff & 0x3FF),
+            0 | 1 => (self.regs[0], (self.regs[0] & 0xFE) as usize * 0x400 + (eff & 0x7FF)),
+            2 | 3 => (self.regs[1], (self.regs[1] & 0xFE) as usize * 0x400 + (eff & 0x7FF)),
+            4 => (self.regs[2], self.regs[2] as usize * 0x400 + (eff & 0x3FF)),
+            5 => (self.regs[3], self.regs[3] as usize * 0x400 + (eff & 0x3FF)),
+            6 => (self.regs[4], self.regs[4] as usize * 0x400 + (eff & 0x3FF)),
+            _ => (self.regs[5], self.regs[5] as usize * 0x400 + (eff & 0x3FF)),
         };
-        ChrTarget::Rom(bank)
+        if self.variant == Mmc3Variant::TqRom {
+            // bit6 选 8K CHR RAM
+            if reg & 0x40 != 0 {
+                let base = match eff >> 10 {
+                    0 | 1 => (reg & 0x3E) as usize * 0x400 + (eff & 0x7FF),
+                    2 | 3 => (reg & 0x3E) as usize * 0x400 + (eff & 0x7FF),
+                    _ => (reg & 0x3F) as usize * 0x400 + (eff & 0x3FF),
+                };
+                return ChrTarget::Ram(base);
+            }
+        }
+        ChrTarget::Rom(i)
+    }
+
+    fn nt_map(&mut self, addr: u16) -> NtRead {
+        if self.variant == Mmc3Variant::TxSrom {
+            return NtRead::Ciram(self.txsrom_page(addr), addr as usize & 0x3FF);
+        }
+        let (p, o) = super::mapper::standard_nt(self.mirroring(), addr);
+        if p < 2 {
+            NtRead::Ciram(p, o)
+        } else {
+            NtRead::Ext(p - 2, o)
+        }
+    }
+
+    fn nt_write_map(&mut self, addr: u16, _val: u8) -> NtWrite {
+        if self.variant == Mmc3Variant::TxSrom {
+            return NtWrite::Ciram(self.txsrom_page(addr), addr as usize & 0x3FF);
+        }
+        let (p, o) = super::mapper::standard_nt(self.mirroring(), addr);
+        if p < 2 {
+            NtWrite::Ciram(p, o)
+        } else {
+            NtWrite::Ext(p - 2, o)
+        }
     }
 
     fn mirroring(&self) -> Mirroring {
         self.mirroring
     }
 
-    fn ppu_addr_notify(&mut self, addr: u16, ppu_cycle: u64) {
-        let high = addr & 0x1000 != 0;
+    fn ppu_dot(&mut self, bus_addr: u16) {
+        let high = bus_addr & 0x1000 != 0;
         if high {
-            if !self.a12_high && ppu_cycle.wrapping_sub(self.a12_low_since) >= A12_FILTER_DOTS {
+            if !self.a12_prev_high && self.a12_low_run >= A12_FILTER_LOW_DOTS {
                 self.clock_irq();
             }
-            self.a12_high = true;
+            self.a12_low_run = 0;
         } else {
-            if self.a12_high {
-                self.a12_low_since = ppu_cycle;
-            }
-            self.a12_high = false;
+            self.a12_low_run = self.a12_low_run.saturating_add(1);
         }
+        self.a12_prev_high = high;
     }
 
     fn irq_asserted(&self) -> bool {

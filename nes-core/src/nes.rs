@@ -107,21 +107,25 @@ impl Nes {
         self.ppu_step();
     }
 
-    /// CPU 周期后半:第 3 个 dot、APU、mapper,并在周期末采样中断线。
-    /// $2002 读清掉 vblank 后,同周期内的 NMI 边沿自然不会被锁存——
-    /// 这正是硬件的 NMI 抑制行为,无需特判。
-    fn tick_end(&mut self) {
-        self.ppu_step();
-        let expansion = self.cart.mapper.audio();
-        self.apu.step(expansion);
-        self.cart.mapper.cpu_tick();
-
+    /// 中断线采样点 = 总线访问之后(φ2 末)。第 3 个 dot 里的边沿要到
+    /// 下一周期才被看见;$2002 读清 vblank 后同周期采不到边沿——
+    /// 硬件的 NMI 抑制行为由此自然产生,无需特判。
+    fn sample_interrupt_lines(&mut self) {
         let line = self.ppu.nmi_line();
         if line && !self.cpu.nmi_line {
             self.cpu.nmi_pending = true;
         }
         self.cpu.nmi_line = line;
         self.cpu.irq_line = self.apu.irq_asserted() || self.cart.mapper.irq_asserted();
+    }
+
+    /// CPU 周期后半:第 3 个 dot、APU、mapper,周期末采样中断线。
+    fn tick_end(&mut self) {
+        self.ppu_step();
+        let expansion = self.cart.mapper.audio();
+        self.apu.step(expansion);
+        self.cart.mapper.cpu_tick();
+        self.sample_interrupt_lines();
     }
 
     /// 无总线访问语义的整周期(内部周期用)。
