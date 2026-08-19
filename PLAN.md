@@ -63,9 +63,17 @@
   - **第二梯队(M4)**:5 MMC5、19 N163、21/22/23/25 VRC2/VRC4(日版魂斗罗在此)、24/26 VRC6、69 FME-7/Sunsoft 5B、85 VRC7、34/38/68/70/75/76/79/87/88/95/118/119/140/152/154/180/185/189/210 等常见号。
   - **第三梯队(M5,滚动推进)**:做一个**表驱动 discrete mapper 框架**(一个 bank 映射描述结构 = 一个编号),把大量简单逻辑类 mapper 快速铺量;再按 NesCartDB 出现频率与 nesdev 文档补多合一/盗版长尾。目标先到 200+ 编号,之后按需求推进;每个编号至少带一个样本 ROM 回归。
 
-## 6. 前端与体验
+## 6. 前端与体验(已定稿)
 
-- **纯 Rust 依赖栈**(无 SDL2 等 C 依赖,无头环境/CI 可构建,后续可编译 wasm 出网页版):winit 窗口、pixels 整数倍缩放、cpal 音频、gilrs 手柄、键盘可配置(默认:方向键 + Z/X = B/A + 回车/右Shift = Start/Select)。
+**选型决议**(评估过 pixels 栈 / softbuffer / SDL2 / SDL3 / eframe / macroquad / libretro,详见会话评估记录):
+
+- **主选**:`winit` + `pixels`(wgpu,整数缩放 + 后续 shader 滤镜)+ `cpal` 音频 + `gilrs` 手柄,egui 调试 overlay 走 feature 门控(发行构建整体剔除)。唯一同时满足 shader 滤镜、wasm 路线、原生调试 UI、纯 crates 依赖四项的组合。
+- **feature 矩阵**:`audio`(cpal,默认开;Linux 构建需 libasound2-dev)、`gamepad`(gilrs,默认开;需 libudev-dev)、`debugger`(egui overlay,默认关)。无头/CI 环境用 `--no-default-features` 裸构建。
+- **降级路径**:softbuffer 渲染 feature(无 GPU 机器/最小构建)。
+- **Plan B**:整体换 SDL2/SDL3(前端为独立 crate,替换成本被架构锁定)。
+- **M5 附加**:libretro core 目标(手写 FFI),接入 RetroArch 生态。
+
+其余体验项:键盘默认 方向键 + Z/X = B/A + 回车/右Shift = Start/Select。
 - **功能**:即时存档 8 槽(F1–F8 类快捷键)、电池存档自动落盘、暂停/逐帧/快进、复位、截图、NTSC/PAL/Dendy 切换;CRT/NTSC 滤镜列二期。
 - **`nes-headless`**:加载 ROM 跑 N 帧,输出帧哈希或读取测试 ROM 的 $6000 状态约定,供 CI 断言。
 

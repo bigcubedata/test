@@ -1,0 +1,10 @@
+[package]
+name = "nes-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Cycle-accurate NES/Famicom (2A03+2C02) emulation core, no I/O"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+bincode = "1.3"

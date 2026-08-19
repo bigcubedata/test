@@ -1,0 +1,13 @@
+[package]
+name = "nes-frontend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Desktop frontend: winit + pixels(wgpu) + cpal + gilrs"
+
+[[bin]]
+name = "nes"
+path = "src/main.rs"
+
+[dependencies]
+nes-core = { path = "../nes-core" }

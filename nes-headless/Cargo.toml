@@ -1,0 +1,9 @@
+[package]
+name = "nes-headless"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Headless runner: nestest golden log, blargg status protocol, frame hashing"
+
+[dependencies]
+nes-core = { path = "../nes-core" }
