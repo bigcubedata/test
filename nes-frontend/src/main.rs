@@ -392,7 +392,9 @@ fn main() {
     }
 
     // 音频
+    #[allow(unused_mut)] // audio feature 关闭时不再赋值
     let mut audio_ring = None;
+    #[allow(unused_mut)]
     let mut audio_rate = 48000.0;
     #[cfg(feature = "audio")]
     let audio_stream;
