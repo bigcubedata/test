@@ -1,0 +1,50 @@
+name: build-windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/rust-nes-emulator-bv9zq8]
+    paths-ignore:
+      - "**.md"
+      - "web/**"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust 工具链信息
+        run: rustup show
+
+      - name: 构建(桌面前端 + libretro 核心)
+        run: cargo build --release -p nes-frontend -p nes-libretro
+
+      - name: 打包
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist | Out-Null
+          Copy-Item target/release/nes.exe dist/
+          Copy-Item target/release/rnes_libretro.dll dist/
+          $readme = @"
+          rnes - 周期级 NES/FC 模拟器(Windows x64)
+
+          运行:  nes.exe 游戏.nes [--scale 4] [--region ntsc|pal|dendy]
+          手柄:  USB 通用手柄(XInput)与 PS5 DualSense(USB/蓝牙)即插即用,
+                 第 1/2 只手柄 = P1/P2
+          键盘:  方向键 + Z=B X=A + 回车=Start 右Shift=Select
+          热键:  F2 存档  F4 读档  1-8 选存档槽  R 复位  P 暂停  Tab 快进  Esc 退出
+
+          rnes_libretro.dll 是 RetroArch 核心,放入 RetroArch 的 cores 目录后
+          用 "加载核心" 选择即可。
+
+          电池存档(.sav)与即时存档(.state1-8)保存在 ROM 文件旁边。
+          "@
+          Set-Content -Path dist/README.txt -Value $readme -Encoding utf8BOM
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: rnes-windows-x64
+          path: dist/
+          if-no-files-found: error
