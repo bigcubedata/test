@@ -3,6 +3,7 @@
 set -e
 cd "$(dirname "$0")"
 mkdir -p build
+python3 tools/gen_aero.py src/aero_tables.inc   # 真实气动表(内含 POH 校验)
 python3 tools/gen_chr.py build/chr.bin
 ca65 src/c172s.s -g -o build/c172s.o
 ld65 -C src/nrom.cfg build/c172s.o -o c172s.nes -m build/c172s.map

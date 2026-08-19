@@ -91,7 +91,7 @@
 | **M3** | APU 5 通道与音频同步、第一梯队 mapper、双档存档 | 魂斗罗可玩带声音,blargg CPU/PPU 套件绿 | ✅ 完成(apu_test 8/8;mapper 0/1/2/3/4/7/11/66/71/180;9/10 待补) |
 | **M4** | MMC5/VRC/N163/FME-7、扩展音源、MMC3 A12 波形、PAL/Dendy、apu_reset | blargg APU + IRQ 时序测试绿 | ✅ 完成(A12 双 dot 波形落地;mmc3-4/6、cpu_interrupts 3-5、apu_reset 2 项遗留,见 README) |
 | **M5** | mapper 铺量、VRC7 FM、wasm、libretro | 按编号回归清单 | ✅ 主体完成(68 编号 + 合成 ROM 矩阵测试;wasm/libretro 双目标;FDS/UNIF/滤镜/批处理优化遗留) |
-| **番外** | 《C172S 五边飞行》原创 NES 游戏(6502 汇编 demake,`game/c172s/`) | 标题/演示冒烟测试 + 自动驾驶整圈落地 | ✅ 完成(NROM;sprite-0 分屏 HUD、列流卷轴、POH 表驱动物理、五边逐段评分、APU 音效、吸引模式) |
+| **番外** | 《C172S 五边飞行》原创 NES 游戏(6502 汇编,`game/c172s/`) | 标题/演示冒烟测试 + 自动驾驶整圈落地 | ✅ v2 完成(座舱第一人称视角:全景地平线/透视跑道/PAPI/六联仪表;真实气动:gen_aero.py 真公式→整数表,POH 校验失速 48-41/Vy 74/极速 123/坡度失速+7%/地效;真实航向位置导航 + 姿态飞行法自动驾驶,演示可拿 CHECKRIDE PASSED) |
 
 ## 9. 主要风险
 

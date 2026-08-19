@@ -6,3 +6,4 @@ perf.data*
 flamegraph.svg
 web/nes_wasm.wasm
 game/c172s/build/
+__pycache__/

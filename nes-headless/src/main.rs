@@ -72,6 +72,14 @@ fn main() -> ExitCode {
                 if checkpoints.len() > 1 {
                     println!("== 帧 {cp} ==");
                 }
+                if let Ok(spec) = std::env::var("NES_PEEK") {
+                    let vals: Vec<String> = spec
+                        .split(',')
+                        .filter_map(|s| s.trim().parse::<u16>().ok())
+                        .map(|a| format!("[{a}]={:02X}", nes.peek(a)))
+                        .collect();
+                    println!("PEEK {}", vals.join(" "));
+                }
                 print!("{}", nametable_text(&nes));
             }
             ExitCode::SUCCESS
@@ -196,11 +204,17 @@ fn nestest(rom_path: &str, log_path: &str) -> ExitCode {
 
 /// blargg 文字引擎:瓦片号即 ASCII。从 nametable 抽出可读文本。
 fn nametable_text(nes: &Nes) -> String {
+    // NES_NT=1 → 转储第二张 nametable
+    let base: usize = std::env::var("NES_NT")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .map(|n| n * 1024)
+        .unwrap_or(0);
     let mut out = String::new();
     for row in 0..30 {
         let mut line = String::new();
         for col in 0..32 {
-            let b = nes.peek_nametable(row * 32 + col);
+            let b = nes.peek_nametable(base + row * 32 + col);
             line.push(if (0x20..0x7F).contains(&b) { b as char } else { ' ' });
         }
         let t = line.trim_end();
@@ -297,6 +311,15 @@ fn run_hash(rom_path: &str, frames: u64) -> ExitCode {
     for f in 0..frames {
         script.apply(&mut nes, f);
         nes.run_frame();
+    }
+    // NES_PEEK="16,17,…":打印零页字节(十进制地址,十六进制值)
+    if let Ok(spec) = std::env::var("NES_PEEK") {
+        let vals: Vec<String> = spec
+            .split(',')
+            .filter_map(|s| s.trim().parse::<u16>().ok())
+            .map(|a| format!("[{a}]={:02X}", nes.peek(a)))
+            .collect();
+        println!("PEEK {}", vals.join(" "));
     }
     // NES_TRACE=N:跑完后单步打印 N 条指令踪迹(调试卡死用)
     if let Ok(n) = std::env::var("NES_TRACE").as_deref().map(|s| s.parse::<u32>().unwrap_or(0)) {

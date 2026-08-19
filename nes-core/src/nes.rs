@@ -250,9 +250,9 @@ impl Nes {
         }
     }
 
-    /// 第一张 nametable 的字节(测试文本抽取用)。
+    /// ciram 字节(测试文本抽取用;0..1023 = NT0,1024..2047 = NT1)。
     pub fn peek_nametable(&self, index: usize) -> u8 {
-        self.ciram[index & 0x3FF]
+        self.ciram[index & 0x7FF]
     }
 
     /// 无副作用读(调试/测试;IO 区返回 0)。

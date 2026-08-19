@@ -94,10 +94,13 @@ Options = Start,十字键与左摇杆等效。
 ## 附带游戏:《C172S 五边飞行》
 
 `game/c172s/` 是一个**从零用 6502 汇编写的原创 NES 游戏**(NROM,构建好的
-`c172s.nes` 已入库)——Godot 版 C172S Simulator 的红白机 demake:POH 目标数字
-(55/74/90/65 KIAS)+ 起落航线逐段 A-E 打分的教官玩法,sprite-0 分屏仪表板、
-列流式卷轴、APU 引擎/失速喇叭、标题自动驾驶演示,细节见
-[game/c172s/README.md](game/c172s/README.md)。
+`c172s.nes` 已入库)——Godot 版 C172S Simulator 的红白机原生移植:
+**座舱内第一人称视角**(全景地平线随真实航向卷动、透视跑道 + PAPI、
+sprite-0 分屏六联仪表盘,精灵指针)+ **真实空气动力学**(升力/诱导阻力/
+功率曲线/失速迎角/地效由真实公式生成查找表,整数管线过 POH 校验:
+失速 48-41、Vy 74、极速 123、坡度失速 +7%、地效飘飞),POH 目标 +
+起落航线逐段 A-E 教官评分,标题自动驾驶整圈演示能拿 CHECKRIDE PASSED,
+细节见 [game/c172s/README.md](game/c172s/README.md)。
 
 ```sh
 cargo run --release -p nes-frontend -- game/c172s/c172s.nes --scale 4
