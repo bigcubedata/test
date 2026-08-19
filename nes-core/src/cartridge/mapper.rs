@@ -213,7 +213,11 @@ impl Mapper {
                 prg_len,
                 chr_ram: true, // UxROM 全部 CHR RAM;若头带 CHR ROM 也照常工作
                 bank: 0,
-                conflicts: submapper != 1,
+                // 总线冲突仅在 NES 2.0 submapper 2 显式声明时模拟。
+                // Konami 的 UNROM 等价板(Top Gun/魂斗罗/恶魔城)无冲突,
+                // 会写任意值;而处理冲突的游戏写匹配值,关掉也无害——
+                // 因此"关"才是普适安全默认。
+                conflicts: submapper == 2,
                 mirroring: header_mirroring,
                 fixed_first: false,
             }),
@@ -230,7 +234,7 @@ impl Mapper {
                 prg_len,
                 chr_ram,
                 bank: 0,
-                conflicts: submapper != 1,
+                conflicts: submapper == 2, // 同 mapper 2:仅显式声明时模拟冲突
                 mirroring: header_mirroring,
             }),
             4 => Mapper::Mmc3(Mmc3::new(prg_len, submapper, header_mirroring)),

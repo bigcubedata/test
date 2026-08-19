@@ -359,6 +359,61 @@ fn mapper_matrix_constructs() {
     }
 }
 
+/// 构造 128K UNROM 合成 ROM:各 bank 首字节为 bank 号,固定 bank 里的代码
+/// 把 `bank_val` 写到 $8000(该处 ROM 字节 = 0x00,与写入值不匹配),
+/// 再把切换后 $8000 的标记字节存到 $0000。
+fn build_unrom(nes2_submapper: Option<u8>, bank_val: u8) -> Vec<u8> {
+    let mut rom = vec![0u8; 16];
+    rom[0..4].copy_from_slice(b"NES\x1a");
+    rom[4] = 8; // 128K PRG
+    rom[5] = 0; // CHR RAM
+    rom[6] = 2 << 4;
+    if let Some(sub) = nes2_submapper {
+        rom[7] = 0x08; // NES 2.0
+        rom[8] = sub << 4;
+    }
+    let mut prg = vec![0u8; 128 * 1024];
+    for bank in 0..8 {
+        prg[bank * 0x4000] = bank as u8; // 标记
+    }
+    // 固定 bank(第 7 个,映射 $C000)偏移 0 处放代码
+    let fixed = 7 * 0x4000;
+    let code = [
+        0xA9, bank_val, // LDA #bank_val
+        0x8D, 0x00, 0x80, // STA $8000(切 bank;ROM 字节 = 0x00)
+        0xAD, 0x00, 0x80, // LDA $8000(读标记)
+        0x85, 0x00, // STA $00
+        0x4C, 0x0A, 0xC0, // JMP $C00A(自旋)
+    ];
+    prg[fixed..fixed + code.len()].copy_from_slice(&code);
+    // 向量 → $C000
+    prg[fixed + 0x3FFC] = 0x00;
+    prg[fixed + 0x3FFD] = 0xC0;
+    prg[fixed + 0x3FFA] = 0x00;
+    prg[fixed + 0x3FFB] = 0xC0;
+    prg[fixed + 0x3FFE] = 0x00;
+    prg[fixed + 0x3FFF] = 0xC0;
+    rom.extend_from_slice(&prg);
+    rom
+}
+
+/// Konami 无冲突板(Top Gun/魂斗罗):默认不得做 AND。
+#[test]
+fn uxrom_no_bus_conflicts_by_default() {
+    let mut nes = Nes::insert(&build_unrom(None, 5)).unwrap();
+    nes.run_frame();
+    assert_eq!(nes.peek(0x0000), 5, "写入 5 应切到 bank 5(无 AND)");
+}
+
+/// NES 2.0 submapper 2 显式声明才模拟总线冲突。
+#[test]
+fn uxrom_bus_conflicts_with_submapper2() {
+    let mut nes = Nes::insert(&build_unrom(Some(2), 5)).unwrap();
+    nes.run_frame();
+    // 5 & 0x00(ROM 字节)= 0 → 停在 bank 0
+    assert_eq!(nes.peek(0x0000), 0, "submapper 2 应做 AND:5 & 0 = 0");
+}
+
 #[test]
 fn savestate_rejects_wrong_rom() {
     let a = load("nestest/nestest.nes");
