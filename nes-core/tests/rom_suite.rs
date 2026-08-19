@@ -421,3 +421,27 @@ fn savestate_rejects_wrong_rom() {
     let mut b = load("instr_timing/instr_timing.nes");
     assert!(b.load_state(&snap).is_err(), "跨 ROM 读档应被拒绝");
 }
+
+/// 《C172S 五边飞行》自研游戏 ROM:标题画面 → 自动驾驶演示开局冒烟。
+#[test]
+fn c172s_game_boots_and_demos() {
+    let rom = std::fs::read(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../game/c172s/c172s.nes"),
+    )
+    .expect("读 game/c172s/c172s.nes(由 game/c172s/build.sh 生成并入库)");
+    let mut nes = Nes::insert(&rom).unwrap();
+    for _ in 0..150 {
+        nes.run_frame();
+    }
+    let title = nametable_text(&nes);
+    assert!(title.contains("TRAFFIC PATTERN TRAINER"), "标题画面异常:\n{title}");
+    // ~13 秒后自动驾驶演示开局(PatternPilot 传承),HUD 应上屏
+    for _ in 150..1500 {
+        nes.run_frame();
+    }
+    let hud = nametable_text(&nes);
+    assert!(
+        hud.contains("IAS") && hud.contains("LEG"),
+        "演示开局 HUD 异常:\n{hud}"
+    );
+}

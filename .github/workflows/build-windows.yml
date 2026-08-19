@@ -26,10 +26,13 @@ jobs:
           New-Item -ItemType Directory -Path dist | Out-Null
           Copy-Item target/release/nes.exe dist/
           Copy-Item target/release/rnes_libretro.dll dist/
+          Copy-Item game/c172s/c172s.nes dist/
           $readme = @"
           rnes - 周期级 NES/FC 模拟器(Windows x64)
 
           运行:  nes.exe 游戏.nes [--scale 4] [--region ntsc|pal|dendy]
+          试玩:  nes.exe c172s.nes --scale 4
+                 (附带的原创游戏《C172S 五边飞行》,起落航线教练,详见仓库)
           手柄:  USB 通用手柄(XInput)与 PS5 DualSense(USB/蓝牙)即插即用,
                  第 1/2 只手柄 = P1/P2
           键盘:  方向键 + Z=B X=A + 回车=Start 右Shift=Select

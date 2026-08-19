@@ -36,12 +36,15 @@ jobs:
             -output dist/rnes_libretro.dylib
           chmod +x dist/nes
           lipo -info dist/nes
+          cp game/c172s/c172s.nes dist/
           cat > dist/README.txt << 'EOF'
           rnes - 周期级 NES/FC 模拟器(macOS universal:Apple Silicon + Intel)
 
           首次运行(未签名二进制,先解除 Gatekeeper 隔离):
             xattr -cr nes rnes_libretro.dylib
             ./nes 游戏.nes --scale 4
+          试玩:  ./nes c172s.nes --scale 4
+                 (附带的原创游戏《C172S 五边飞行》,起落航线教练,详见仓库)
 
           参数:  [--scale N] [--region ntsc|pal|dendy]
           手柄:  USB 通用手柄与 PS5 DualSense(USB/蓝牙)即插即用,

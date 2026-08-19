@@ -91,6 +91,18 @@ Options = Start,十字键与左摇杆等效。
   `SUBSYSTEM=="hidraw", ATTRS{idVendor}=="054c", MODE="0660", TAG+="uaccess"`。
 - 蓝牙配对:长按 DualSense 的 PS + Create 键至灯条闪烁,系统蓝牙里配对即可。
 
+## 附带游戏:《C172S 五边飞行》
+
+`game/c172s/` 是一个**从零用 6502 汇编写的原创 NES 游戏**(NROM,构建好的
+`c172s.nes` 已入库)——Godot 版 C172S Simulator 的红白机 demake:POH 目标数字
+(55/74/90/65 KIAS)+ 起落航线逐段 A-E 打分的教官玩法,sprite-0 分屏仪表板、
+列流式卷轴、APU 引擎/失速喇叭、标题自动驾驶演示,细节见
+[game/c172s/README.md](game/c172s/README.md)。
+
+```sh
+cargo run --release -p nes-frontend -- game/c172s/c172s.nes --scale 4
+```
+
 ## 测试与无头工具
 
 ```sh

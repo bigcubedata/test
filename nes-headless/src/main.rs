@@ -4,8 +4,43 @@
 //!   nes-headless run <rom> --frames N      —— 跑 N 帧输出帧哈希
 //!   nes-headless ppm <rom> <out.ppm> [N]   —— 跑 N 帧后导出画面
 
-use nes_core::{Nes, Region};
+use nes_core::{Buttons, Nes, Port, Region};
 use std::process::ExitCode;
+
+/// NES_INPUT="帧:十六进制掩码,帧:掩码,…" —— 到达指定帧时把 P1 设为该掩码并保持。
+/// 位序 A=01 B=02 SEL=04 STA=08 U=10 D=20 L=40 R=80。例:NES_INPUT="120:08,130:00"
+struct InputScript {
+    events: Vec<(u64, u8)>,
+    idx: usize,
+}
+
+impl InputScript {
+    fn from_env() -> Self {
+        let mut events: Vec<(u64, u8)> = std::env::var("NES_INPUT")
+            .ok()
+            .map(|s| {
+                s.split(',')
+                    .filter_map(|kv| {
+                        let (f, m) = kv.trim().split_once(':')?;
+                        Some((f.parse().ok()?, u8::from_str_radix(m, 16).ok()?))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        events.sort_by_key(|e| e.0);
+        InputScript { events, idx: 0 }
+    }
+
+    fn apply(&mut self, nes: &mut Nes, frame: u64) {
+        while let Some(&(f, m)) = self.events.get(self.idx) {
+            if f > frame {
+                break;
+            }
+            nes.set_input(Port::P1, Buttons(m));
+            self.idx += 1;
+        }
+    }
+}
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
@@ -20,12 +55,25 @@ fn main() -> ExitCode {
             run_hash(&args[2], frames)
         }
         Some("text") if args.len() >= 3 => {
-            let frames: u64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(300);
+            // 帧数可为逗号分隔的多个检查点:一次长跑,途中多次转储
+            let spec = args.get(3).cloned().unwrap_or_else(|| "300".into());
+            let mut checkpoints: Vec<u64> =
+                spec.split(',').filter_map(|s| s.parse().ok()).collect();
+            checkpoints.sort_unstable();
             let mut nes = load(&args[2]);
-            for _ in 0..frames {
-                nes.run_frame();
+            let mut script = InputScript::from_env();
+            let mut f = 0u64;
+            for cp in &checkpoints {
+                while f < *cp {
+                    script.apply(&mut nes, f);
+                    nes.run_frame();
+                    f += 1;
+                }
+                if checkpoints.len() > 1 {
+                    println!("== 帧 {cp} ==");
+                }
+                print!("{}", nametable_text(&nes));
             }
-            print!("{}", nametable_text(&nes));
             ExitCode::SUCCESS
         }
         Some("ppm") if args.len() >= 4 => {
@@ -245,8 +293,18 @@ fn fnv(data: impl Iterator<Item = u8>) -> u64 {
 
 fn run_hash(rom_path: &str, frames: u64) -> ExitCode {
     let mut nes = load(rom_path);
-    for _ in 0..frames {
+    let mut script = InputScript::from_env();
+    for f in 0..frames {
+        script.apply(&mut nes, f);
         nes.run_frame();
+    }
+    // NES_TRACE=N:跑完后单步打印 N 条指令踪迹(调试卡死用)
+    if let Ok(n) = std::env::var("NES_TRACE").as_deref().map(|s| s.parse::<u32>().unwrap_or(0)) {
+        for _ in 0..n {
+            let t = nes.trace();
+            println!("{:04X} A:{:02X} X:{:02X} Y:{:02X} SP:{:02X}", t.pc, t.a, t.x, t.y, t.sp);
+            nes.step();
+        }
     }
     let h = fnv(nes.framebuffer().iter().flat_map(|p| p.to_le_bytes()));
     println!("{frames} 帧后帧哈希: {h:016x}");
@@ -255,7 +313,9 @@ fn run_hash(rom_path: &str, frames: u64) -> ExitCode {
 
 fn ppm(rom_path: &str, out_path: &str, frames: u64) -> ExitCode {
     let mut nes = load(rom_path);
-    for _ in 0..frames {
+    let mut script = InputScript::from_env();
+    for f in 0..frames {
+        script.apply(&mut nes, f);
         nes.run_frame();
     }
     let mut rgba = vec![0u8; nes_core::FRAME_W * nes_core::FRAME_H * 4];
