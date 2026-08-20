@@ -74,6 +74,20 @@ M_FLAP0     = 19
 M_FLAP1     = 20
 M_FLAP2     = 21
 M_FLAP3     = 22
+M_RUDDER    = 23
+M_CRAB      = 24
+M_BOUNCE    = 25
+M_PORP      = 26
+M_NOSEW     = 27
+M_SIDE      = 28
+M_VFE       = 29
+M_CARB      = 30
+M_TWR1      = 31
+M_TWR2      = 32
+M_TWRGA     = 33
+M_GAOK      = 34
+M_WING      = 35
+M_VEER      = 36
 
 ; ---------------- 零页 ----------------
 .segment "ZEROPAGE"
@@ -202,10 +216,64 @@ mus_t2:      .res 1
 mus_i3:      .res 1
 mus_t3:      .res 1
 
+; --- v3:大气/发动机/襟翼/地面 ---
+wind_e:      .res 1             ; 风东分量(8.8 ft/2 每帧,有符号,含阵风)
+wind_n:      .res 1
+gust_lfsr:   .res 1
+gust_t:      .res 1
+rpm_lo:      .res 1             ; 定距桨转速(16 位,带惯性)
+rpm_hi:      .res 1
+eng_idx:     .res 1             ; 声音/音量档 0..8
+flap_lo:     .res 1             ; 襟翼位置 8.8 档(电动渐变)
+flap_hi:     .res 1
+flap_tgt:    .res 1
+flap_mov:    .res 1
+steer_cmd:   .res 1             ; 地面前轮转向 -1/0/+1
+pf_msg:      .res 1
+stall_act:   .res 1             ; 迎角超临界(掉翼/深失速)
+wd_msg:      .res 1
+bounce_n:    .res 1
+ldg_drift:   .res 1             ; 接地侧向漂移
+crab_msg:    .res 1
+carb_ok:     .res 1
+ov_flag:     .res 1
+ga_state:    .res 1             ; 随机复飞:0 未评估 2 已令 3 未触发 4 已完成
+ga_t:        .res 1
+radio_q:     .res 1
+radio_t:     .res 1
+
+; --- v3:视觉 ---
+shake_x:     .res 1             ; 机体震动(有符号)
+shake_fy:    .res 1
+jolt_t:      .res 1
+jolt_m:      .res 1
+gs_phase:    .res 1             ; 地面双相闪烁
+gs_t:        .res 1
+grush:       .res 1             ; 低空地面扑面档 0/1/2
+mch_phase:   .res 1             ; 中线行进相位
+mch_t:       .res 1
+rw_skew:     .res 1             ; 跑道侧偏透视(有符号 ±2)
+rw_drawn_s:  .res 1
+rw_att_c:    .res 1             ; 已写跑道属性起始格($FF 无)
+rw_att_n:    .res 1
+night_lvl:   .res 1             ; 0 白天 1 黄昏 2 夜航
+cont_flag:   .res 1
+fade_mode:   .res 1             ; 0 无 1 变暗 2 变亮
+fade_step:   .res 1
+fade_t:      .res 1
+fade_next:   .res 1             ; 1 标题 2 游戏 3 讲评
+fade_arg:    .res 1
+pal_ptr:     .res 2
+trk_t:       .res 1
+trk_i:       .res 1
+
 .segment "BSS"
 ppu_buf:     .res 208
 grades:      .res 6
 dec_buf:     .res 5
+trk_bx:      .res 48            ; 航迹采样(讲评回放图)
+trk_by:      .res 48
+stage:       .res 16            ; 跑道贴块行暂存(垫宽/侧偏/相位替换)
 oam := $0200
 
 ; ============================================================================
@@ -316,6 +384,7 @@ nmi:
         jmp @tickd
 @s2:    jsr tick_debrief
 @tickd:
+        jsr fade_tick
         jsr sound_tick
         inc frame
         lda #0
@@ -347,12 +416,14 @@ do_split:
         dey
         bne @wset
         rts
-@set:   ldx #14
+@set:   ldx #13
 @d:     dex
         bne @d
         lda #$01
         sta $2006
+        sec
         lda #$60
+        sbc shake_fy            ; 震动:面板整体下沉 0-3px(顶部露机头罩,无损)
         sta $2005
         lda #$00
         sta $2005
@@ -528,6 +599,21 @@ score_add16:
         sta score_hi
         rts
 
+score_sub8:                     ; score = max(0, score - A)
+        sta tmp0
+        sec
+        lda score_lo
+        sbc tmp0
+        sta score_lo
+        lda score_hi
+        sbc #0
+        sta score_hi
+        bcs @rts
+        lda #0
+        sta score_lo
+        sta score_hi
+@rts:   rts
+
 ; ============================================================================
 ; 真实气动物理(每帧;gen_aero.py 配方)
 ; ============================================================================
@@ -539,6 +625,116 @@ physics:
         bcc @vok
         lda #160
 @vok:   sta vint
+
+        ; ---- 定距桨转速:tgt = base[thr]+V×slp>>3,rpm += Δ>>4(惯性) ----
+        lda vint
+        sta tmp0
+        ldx thr
+        lda rpm_slp,x
+        sta tmp1
+        jsr mul8x8
+        ldx #3
+@rs:    lsr mul_hi
+        ror mul_lo
+        dex
+        bne @rs
+        ldx thr
+        clc
+        lda mul_lo
+        adc rpm_base_lo,x
+        sta tmp0
+        lda mul_hi
+        adc rpm_base_hi,x
+        sta tmp1
+        sec
+        lda tmp0
+        sbc rpm_lo
+        sta mul_lo
+        lda tmp1
+        sbc rpm_hi
+        sta mul_hi
+        ldx #4
+        jsr shrx
+        clc
+        lda rpm_lo
+        adc mul_lo
+        sta rpm_lo
+        lda rpm_hi
+        adc mul_hi
+        sta rpm_hi
+        ; 声档 = (rpm-600)>>8 钳 0..8
+        sec
+        lda rpm_lo
+        sbc #<600
+        lda rpm_hi
+        sbc #>600
+        bpl @ei_p
+        lda #0
+@ei_p:  cmp #9
+        bcc @ei_ok
+        lda #8
+@ei_ok: sta eng_idx
+
+        ; ---- 电动襟翼渐变(1 档 ≈1.4s)+ 电机标志 ----
+        lda flap_hi
+        cmp flap_tgt
+        bne @fl_move
+        lda flap_lo
+        beq @fl_stop
+        ; 同档带小数(只在收襟翼路径出现)→ 继续收
+@fl_move:
+        lda #1
+        sta flap_mov
+        lda flap_hi
+        cmp flap_tgt
+        bcs @fl_dn
+        ; 放襟翼
+        clc
+        lda flap_lo
+        adc #3
+        sta flap_lo
+        lda flap_hi
+        adc #0
+        sta flap_hi
+        cmp flap_tgt
+        bcc @fl_upd
+        ; 到档:清小数
+        lda #0
+        sta flap_lo
+        jmp @fl_upd
+@fl_dn: ; 收襟翼:已在目标档内且余量将尽 → 吸附,防跨档回摆
+        cmp flap_tgt
+        bne @fl_dn2
+        lda flap_lo
+        cmp #4
+        bcs @fl_dn2
+        lda #0
+        sta flap_lo
+        jmp @fl_upd
+@fl_dn2:
+        sec
+        lda flap_lo
+        sbc #3
+        sta flap_lo
+        lda flap_hi
+        sbc #0
+        sta flap_hi
+        jmp @fl_upd
+@fl_stop:
+        lda #0
+        sta flap_mov
+@fl_upd:
+        ; flaps = round(flap88)
+        lda flap_lo
+        clc
+        adc #128
+        lda flap_hi
+        adc #0
+        cmp #4
+        bcc @fl_set
+        lda #3
+@fl_set:
+        sta flaps
 
         ; ---- α_req = (CLR-CL0)×94>>8,坡度 ×(1+invc_d/256) ----
         ldx vint
@@ -579,13 +775,18 @@ physics:
 @nb:    lda mul_hi
 @areq_set:
         sta a_req
-        ; 喇叭(空中且 α_req ≥ horn)
+        ; 喇叭(空中且 α_req ≥ horn);失速标志(α_req ≥ crit → 掉翼)
         ldx #0
+        stx stall_act
         lda on_ground
         bne @hs
         lda a_req
         bmi @hs
         ldy flaps
+        cmp crit_hd,y
+        bcc @crit_no
+        inc stall_act
+@crit_no:
         cmp horn_hd,y
         bcc @hs
         inx
@@ -651,6 +852,49 @@ physics:
         lda g88_hi
         adc mul_hi
         sta g88_hi
+        ; ---- 掉翼:失速中带坡度 → 坡度向内侧发散(减迎角才能改出) ----
+        lda stall_act
+        beq @wd_clr
+        lda bank88_hi
+        bmi @wd_l
+        cmp #8
+        bcc @wd_done
+        clc
+        lda bank88_lo
+        adc #24
+        sta bank88_lo
+        lda bank88_hi
+        adc #0
+        cmp #38
+        bcc @wd_st_r
+        lda #38
+@wd_st_r:
+        sta bank88_hi
+        jmp @wd_warn
+@wd_l:  cmp #<(-8)
+        bpl @wd_done
+        sec
+        lda bank88_lo
+        sbc #24
+        sta bank88_lo
+        lda bank88_hi
+        sbc #0
+        cmp #<(-38)
+        bpl @wd_st_l
+        lda #<(-38)
+@wd_st_l:
+        sta bank88_hi
+@wd_warn:
+        lda wd_msg
+        bne @wd_done
+        inc wd_msg
+        lda #M_WING
+        jsr msg_set
+        jmp @wd_done
+@wd_clr:
+        lda #0
+        sta wd_msg
+@wd_done:
 
 @drag:  ; ---- CL_eff → tmp6 ----
         lda on_ground
@@ -958,9 +1202,34 @@ physics:
         adc tmp5
         sta vs16_hi
 
-        ; ---- 航向(转弯率 = g·tanφ/V) ----
+        ; ---- 航向 ----
+        lda on_ground
+        beq @air_turn
+        ; 地面:前轮转向(滚动中才有效)
+        lda vint
+        cmp #8
+        bcc @pfact
+        lda steer_cmd
+        beq @pfact
+        bmi @gs_l
+        clc
+        lda psi_lo
+        adc #14
+        sta psi_lo
+        bcc @pfact
+        inc psi_hi
+        jmp @pfact
+@gs_l:  sec
+        lda psi_lo
+        sbc #14
+        sta psi_lo
+        bcs @pfact
+        dec psi_hi
+        jmp @pfact
+@air_turn:
+        ; 转弯率 = g·tanφ/V
         lda bank_idx
-        beq @position
+        beq @pfact
         tay
         lda tank_tab,y
         sta tmp0
@@ -977,13 +1246,33 @@ physics:
         lda psi_lo
         adc mul_hi
         sta psi_lo
-        bcc @position
+        bcc @pfact
         inc psi_hi
-        jmp @position
+        jmp @pfact
 @turn_l:
         sec
         lda psi_lo
         sbc mul_hi
+        sta psi_lo
+        bcs @pfact
+        dec psi_hi
+@pfact: ; ---- P-factor/滑流:大功率低速左偏(真机要踩右舵) ----
+        ldx thr
+        lda pf_tab,x
+        beq @position
+        ldy vint
+        cpy #12
+        bcc @position           ; 静止不偏
+        cpy #100
+        bcs @position
+        cpy #85
+        bcc @pf_go
+        lsr a
+        beq @position
+@pf_go: sta tmp0
+        sec
+        lda psi_lo
+        sbc tmp0
         sta psi_lo
         bcs @position
         dec psi_hi
@@ -1040,6 +1329,78 @@ physics:
         tya
         adc py_hi
         sta py_hi
+
+        ; ---- 风漂移(仅空中;地速 = 空速矢量 + 风矢量) ----
+        lda on_ground
+        bne @gust_upd
+        lda wind_e
+        bpl @we_p
+        ldy #$FF
+        bne @we_x
+@we_p:  ldy #0
+@we_x:  clc
+        adc px_fr
+        sta px_fr
+        tya
+        adc px_lo
+        sta px_lo
+        tya
+        adc px_hi
+        sta px_hi
+        lda wind_n
+        bpl @wn_p
+        ldy #$FF
+        bne @wn_x
+@wn_p:  ldy #0
+@wn_x:  clc
+        adc py_fr
+        sta py_fr
+        tya
+        adc py_lo
+        sta py_lo
+        tya
+        adc py_hi
+        sta py_hi
+@gust_upd:
+        ; ---- 阵风:每 32 帧 LFSR 换档;低空(<256ft)垂直扰动 ----
+        lda frame
+        and #$1F
+        bne @gust_done
+        lda gust_lfsr
+        asl a
+        bcc @lf_x
+        eor #$1D
+@lf_x:  sta gust_lfsr
+        and #$03
+        cmp #3
+        bcc @g_idx
+        lda #1
+@g_idx: tax
+        lda wind_e_tab,x
+        sta wind_e
+        lda wind_n_tab,x
+        sta wind_n
+        lda on_ground
+        bne @gust_done
+        lda h_hi
+        bne @gust_done
+        lda gust_lfsr
+        and #$04
+        beq @gv_dn
+        clc
+        lda g88_lo
+        adc #12
+        sta g88_lo
+        bcc @gust_done
+        inc g88_hi
+        jmp @gust_done
+@gv_dn: sec
+        lda g88_lo
+        sbc #12
+        sta g88_lo
+        bcs @gust_done
+        dec g88_hi
+@gust_done:
         rts
 
 ; ---------------- 事件 ----------------
@@ -1059,6 +1420,42 @@ ev_touchdown:
         lda #0
         sbc vs16_hi
         sta ldg_fpm_hi
+        ; 接地侧向漂移 = |V·sinψ + 风东|(8.8 ft/2 每帧,钳 255)
+        lda psi_hi
+        lsr a
+        lsr a
+        and #$3F
+        tax
+        lda sin116,x
+        ldy vint
+        jsr smul_au
+        jsr shr5_s
+        lda wind_e
+        bpl @dw_p
+        ldy #$FF
+        bne @dw_x
+@dw_p:  ldy #0
+@dw_x:  clc
+        adc mul_lo
+        sta tmp0
+        tya
+        adc mul_hi
+        sta tmp1
+        bpl @dr_abs
+        sec
+        lda #0
+        sbc tmp0
+        sta tmp0
+        lda #0
+        sbc tmp1
+        sta tmp1
+@dr_abs:
+        lda tmp1
+        beq @dr_lo
+        lda #255
+        bne @dr_st
+@dr_lo: lda tmp0
+@dr_st: sta ldg_drift
         lda #0
         sta g88_lo
         sta g88_hi
@@ -1081,6 +1478,19 @@ ev_touchdown:
         jmp @xg
 @far:   lda #255
 @xg:    sta ldg_x
+        ; 机体冲击震动
+        ldx #1
+        lda ldg_fpm_hi
+        bne @j_big
+        lda ldg_fpm_lo
+        cmp #250
+        bcc @j_go
+        inx
+        bne @j_go
+@j_big: ldx #3
+@j_go:  stx jolt_m
+        lda #8
+        sta jolt_t
         ; FINAL 之前触地 = 起飞回落:场内回 ROLL 不评分,场外坠毁
         lda leg
         cmp #LEG_FINAL
@@ -1095,7 +1505,75 @@ ev_touchdown:
         jsr on_runway_chk
         bcs @on
         jmp @off
-@on:    lda #LEG_ROLLOUT
+@on:    ; ≥700 fpm → 硬着陆坠机
+        lda ldg_fpm_hi
+        cmp #>700
+        bcc @hard_no
+        bne @hard
+        lda ldg_fpm_lo
+        cmp #<700
+        bcc @hard_no
+@hard:  lda #M_HARD
+        jsr msg_set
+        jmp @crash_common
+@hard_no:
+        ; 400-699 fpm → 弹跳(能量回弹;三连跳 = 海豚跳坠机)
+        lda ldg_fpm_hi
+        cmp #>400
+        bcc @stick
+        bne @bounce
+        lda ldg_fpm_lo
+        cmp #<400
+        bcc @stick
+@bounce:
+        inc bounce_n
+        lda bounce_n
+        cmp #3
+        bcs @porpoise
+        lda #0
+        sta on_ground
+        lda ldg_fpm_lo
+        asl a
+        sta g88_lo
+        lda ldg_fpm_hi
+        rol a
+        sta g88_hi
+        cmp #>1400
+        bcc @b_ok
+        bne @b_cap
+        lda g88_lo
+        cmp #<1400
+        bcc @b_ok
+@b_cap: lda #>1400
+        sta g88_hi
+        lda #<1400
+        sta g88_lo
+@b_ok:  sec
+        lda v88_hi
+        sbc #3
+        sta v88_hi
+        bpl @b_v
+        lda #0
+        sta v88_hi
+        sta v88_lo
+@b_v:   lda #3
+        sta jolt_m
+        lda #12
+        sta jolt_t
+        lda #8
+        sta noise_burst
+        lda #8
+        sta tri_timer
+        lda #100
+        jsr score_sub8
+        lda #M_BOUNCE
+        jsr msg_set
+        rts
+@porpoise:
+        lda #M_PORP
+        jsr msg_set
+        jmp @crash_common
+@stick: lda #LEG_ROLLOUT
         sta leg
         lda #2
         sta theta
@@ -1105,8 +1583,19 @@ ev_touchdown:
         sta tri_timer
         jsr grade_landing
         jsr on_leg_enter
-        rts
-@off:   lda #1
+        ; 无视塔台复飞令着陆 → 重罚
+        lda ga_state
+        cmp #2
+        bne @rts2
+        lda #200
+        jsr score_sub8
+        lda #200
+        jsr score_sub8
+@rts2:  rts
+@off:   lda #M_OFFRWY
+        jsr msg_set
+@crash_common:
+        lda #1
         sta crashed
         lda #150
         sta done_timer
@@ -1114,10 +1603,12 @@ ev_touchdown:
         sta grades+5
         lda #1
         sta grades_dirty
-        lda #M_OFFRWY
-        jsr msg_set
-        lda #12
+        lda #14
         sta noise_burst
+        lda #3
+        sta jolt_m
+        lda #20
+        sta jolt_t
         lda #LEG_ROLLOUT
         sta leg
         rts
@@ -1140,7 +1631,7 @@ on_runway_chk:
 @no:    clc
         rts
 
-; 接地评分:真实 fpm 档(<150 A <250 B <400 C <600 D)+ 中线奖励
+; 接地评分:fpm 档(<150 A <250 B <400 C)+ 姿态/弹跳/侧载封顶 + 中线奖励
 grade_landing:
         ldx #0
 @lp:    lda ldg_fpm_hi
@@ -1153,25 +1644,52 @@ grade_landing:
 @nx:    inx
         cpx #4
         bne @lp
-        ; 硬着陆
-        lda #'E'
-        sta grades+5
-        lda #1
-        sta grades_dirty
-        lda #M_HARD
-        jsr msg_set
-        lda #1
-        sta crashed
-        lda #150
-        sta done_timer
-        rts
-@got:   txa
+        dex                     ; ≥400 已走弹跳路径,理论不可达
+@got:   lda #0
+        sta tmp5                ; 覆盖提示消息
+        ; 前轮先着(θ<+1°)→ 至少 D
+        lda theta
+        cmp #2
+        bpl @nw_ok
+        cpx #3
+        bcs @nw_m
+        ldx #3
+@nw_m:  lda #M_NOSEW
+        sta tmp5
+        lda #100
+        jsr score_sub8
+@nw_ok: ; 弹跳史 → 至少 C
+        lda bounce_n
+        beq @b_done
+        cpx #2
+        bcs @b_done
+        ldx #2
+@b_done:
+        ; 侧向漂移:≥20 侧载(至少 C),≥10 小罚
+        lda ldg_drift
+        cmp #20
+        bcc @dr_sm
+        cpx #2
+        bcs @dr_m
+        ldx #2
+@dr_m:  lda tmp5
+        bne @dr_done
+        lda #M_SIDE
+        sta tmp5
+        jmp @dr_done
+@dr_sm: cmp #10
+        bcc @dr_done
+        lda #100
+        jsr score_sub8
+@dr_done:
+        txa
+        pha
         clc
         adc #'A'
         sta grades+5
         lda #1
         sta grades_dirty
-        txa
+        pla
         asl a
         tax
         lda ldg_score,x
@@ -1181,17 +1699,25 @@ grade_landing:
         jsr score_add16
         lda ldg_x
         cmp #9
-        bcs @m
+        bcs @cl_done
         lda #<300
         sta tmp0
         lda #>300
         sta tmp1
         jsr score_add16
-@m:     lda ldg_fpm_hi
+@cl_done:
+        lda tmp5
+        beq @m_nice
+        jsr msg_set
+        jmp @snd
+@m_nice:
+        lda ldg_fpm_hi
         bne @m2
         lda ldg_fpm_lo
         cmp #150
         bcs @m2
+        lda bounce_n
+        bne @m2
         lda #M_NICE
         jsr msg_set
         jmp @snd
@@ -1211,6 +1737,10 @@ enter_title:
         bit $2002
         lda #ST_TITLE
         sta game_state
+        lda #0
+        sta night_lvl           ; 标题总是白天
+        sta shake_x
+        sta shake_fy
         jsr load_palettes
         jsr draw_title
         lda #0
@@ -1314,8 +1844,9 @@ tick_title:
         rts
 
 start_game:
-        sta ai_on
-        jmp enter_game
+        sta fade_arg
+        lda #2
+        jmp fade_begin
 
 ; ============================================================================
 ; 进入游戏
@@ -1361,8 +1892,6 @@ enter_game:
         sta abeam_done
         sta leg_good
         sta leg_max
-        sta score_lo
-        sta score_hi
         sta done_timer
         sta a_hold
         sta b_hold
@@ -1371,6 +1900,68 @@ enter_game:
         sta eng_hi_last
         sta hz_task
         sta rw_task
+        ; --- v3 状态 ---
+        sta flap_lo
+        sta flap_hi
+        sta flap_tgt
+        sta flap_mov
+        sta steer_cmd
+        sta pf_msg
+        sta stall_act
+        sta wd_msg
+        sta bounce_n
+        sta ldg_drift
+        sta crab_msg
+        sta carb_ok
+        sta ga_state
+        sta ga_t
+        sta radio_q
+        sta radio_t
+        sta shake_x
+        sta shake_fy
+        sta jolt_t
+        sta jolt_m
+        sta gs_phase
+        sta gs_t
+        sta mch_phase
+        sta mch_t
+        sta rw_skew
+        sta trk_t
+        sta trk_i
+        lda #$FF
+        sta rw_drawn_s
+        sta rw_att_c
+        lda #2
+        sta grush               ; 地面滑跑 = 贴地纹理
+        lda #<700
+        sta rpm_lo
+        lda #>700
+        sta rpm_hi
+        ; 阵风种子:演示恒定(录像可复现),玩家随机
+        lda ai_on
+        beq @seed_p
+        lda #$5A
+        bne @seed_s
+@seed_p:
+        lda frame
+        ora #$01
+@seed_s:
+        sta gust_lfsr
+        ldx #1
+        lda wind_e_tab,x
+        sta wind_e
+        lda wind_n_tab,x
+        sta wind_n
+        ; 续飞(黄昏/夜航圈)保留总分与昼夜档
+        lda cont_flag
+        bne @keep_score
+        lda #0
+        sta score_lo
+        sta score_hi
+        sta night_lvl
+@keep_score:
+        lda #0
+        sta cont_flag
         lda #50
         sta py_lo
         lda #0
@@ -1410,6 +2001,15 @@ enter_game:
         sta oam+2
         lda #16
         sta oam+3
+        ; Vne 红线(空速表盘 160kt 位置的固定红标)
+        lda #102
+        sta oam+84
+        lda #$50
+        sta oam+85
+        lda #$00
+        sta oam+86
+        lda #12
+        sta oam+87
 
         lda #$1E
         sta $2001
@@ -1425,13 +2025,15 @@ tick_game:
         beq @alive
         dec done_timer
         bne @rts0
-        jmp enter_debrief
+        lda #3
+        jmp fade_begin
 @alive: lda leg
         cmp #LEG_DONE
         bne @notdone
         dec done_timer
         bne @rts0
-        jmp enter_debrief
+        lda #3
+        jmp fade_begin
 @rts0:  rts
 @notdone:
         lda ai_on
@@ -1457,7 +2059,8 @@ tick_game:
 @chk_o: lda pad_new
         and #BTN_A|BTN_B|BTN_SEL
         beq @ai_go
-        jmp enter_title
+        lda #1
+        jmp fade_begin
 @ai_go: jsr ai_tick
         jmp @common
 @player:
@@ -1469,6 +2072,7 @@ tick_game:
         jsr bank_update
         jsr physics
         jsr legs_tick
+        jsr shake_upd
         lda frame
         and #$07
         bne @noslow
@@ -1541,17 +2145,50 @@ apply_input:
 @sel:   lda pad_new
         and #BTN_SEL
         beq @roll
-        lda flaps
+        lda flap_tgt
         clc
         adc #1
         and #3
-        sta flaps
+        sta flap_tgt
+        ; Vfe:>85 kt 放襟翼 → 警告 + 扣分(照样放,后果自负)
+        beq @fl_msg             ; 收回(→0)不限速
+        lda vint
+        cmp #86
+        bcc @fl_msg
+        lda #M_VFE
+        jsr msg_set
+        lda #100
+        jsr score_sub8
+        ldy #CH_WARN
+        jsr chime_start
+        jmp @roll
+@fl_msg:
+        lda flap_tgt
         clc
         adc #M_FLAP0
         jsr msg_set
         ldy #CH_BLIP
         jsr chime_start
-@roll:  ; LEFT/RIGHT 压坡度(玩家;教官代打时被 ai_turn_ctl 覆盖)
+@roll:  ; 地面:LEFT/RIGHT = 前轮转向(修 P-factor);空中 = 压坡度
+        lda on_ground
+        beq @air_roll
+        lda #0
+        sta steer_cmd
+        lda pad
+        and #BTN_LT
+        beq @gs_r
+        lda #$FF
+        sta steer_cmd
+@gs_r:  lda pad
+        and #BTN_RT
+        beq @gs_c
+        lda #1
+        sta steer_cmd
+@gs_c:  jsr roll_center
+        rts
+@air_roll:
+        lda #0
+        sta steer_cmd
         lda ai_takeover
         bne @rts
         lda pad
@@ -1631,6 +2268,39 @@ roll_center:
         sta bank88_hi
 @rts:   rts
 
+; 机体震动:失速抖振(迎角驱动)+ 接地/弹跳冲击
+shake_upd:
+        lda #0
+        sta shake_x
+        sta shake_fy
+        lda horn_on
+        beq @jolt
+        lda frame
+        and #$02
+        beq @bx_n
+        lda #1
+        bne @bx_s
+@bx_n:  lda #$FF
+@bx_s:  sta shake_x
+        lda frame
+        and #$01
+        sta shake_fy
+@jolt:  lda jolt_t
+        beq @rts
+        dec jolt_t
+        lda jolt_m
+        sta shake_fy
+        lda frame
+        and #$02
+        beq @j_n
+        lda jolt_m
+        bne @j_s
+@j_n:   sec
+        lda #0
+        sbc jolt_m
+@j_s:   sta shake_x
+@rts:   rts
+
 ; |bank| → bank_idx(0/1/2/3 ≈ 0/10/20/30°)
 bank_update:
         lda bank88_hi
@@ -1657,6 +2327,20 @@ bank_update:
 ; ============================================================================
 ai_tick:
         inc ai_timer
+        ; 地面:自动"踩舵"对准跑道航向(修 P-factor)
+        lda on_ground
+        beq @in_air
+        ldx #0
+        lda psi_hi
+        beq @st_set
+        cmp #128
+        bcs @st_r
+        ldx #$FF
+        bne @st_set
+@st_r:  ldx #1
+@st_set:
+        stx steer_cmd
+@in_air:
         ; 转弯:提示窗一到就开始压坡度
         lda turn_phase
         cmp #1
@@ -1681,7 +2365,22 @@ ai_tick:
         beq @loc
         cmp #LEG_FLARE
         beq @loc
-        jsr roll_center
+        ; 直线段航向保持:浅坡度修掉 P-factor/风致偏航
+        ldx leg
+        lda psi_hi
+        sec
+        sbc leg_hdg,x
+        cmp #$80
+        bcs @h_r
+        cmp #2
+        bcc @h_lvl
+        jsr roll_left10
+        jmp @trim
+@h_r:   cmp #$FF
+        beq @h_lvl
+        jsr roll_right10
+        jmp @trim
+@h_lvl: jsr roll_center
         jmp @trim
 @loc:   jsr ai_localizer
 @trim:  ; 慢配平(每 64 帧)
@@ -1704,13 +2403,13 @@ ai_tick:
         dec thr
 @thr_ok:
         lda ai_flap_tab,x
-        cmp flaps
+        cmp flap_tgt
         beq @flap_ok
         bcc @flap_dn
-        inc flaps
+        inc flap_tgt
         bne @flap_ok
 @flap_dn:
-        dec flaps
+        dec flap_tgt
 @flap_ok:
         ; 分航段俯仰策略(跳板避免远分支)
         lda leg
@@ -1774,12 +2473,12 @@ ai_tick:
         inc theta
         rts
 @ah_c3: cmp #80
-        bcs @rts
+        bcs @rts_c
         lda theta
         cmp #<(-14)
-        beq @rts
+        beq @rts_c
         dec theta
-        rts
+@rts_c: rts
 @ah_at: lda h_hi
         cmp #>1030
         bcc @ah_lo
@@ -1798,7 +2497,17 @@ ai_tick:
         bcs @ah_spd
 @ah_up: inc theta
 @ah_spd:
-        lda vint
+        ; 过正切:教科书动作 —— 收油到 4,放襟翼 10,提前减速
+        lda abeam_done
+        beq @ah_v
+        lda #1
+        sta flap_tgt
+        lda thr
+        cmp #5
+        bcc @rts
+        dec thr
+        rts
+@ah_v:  lda vint
         cmp #94
         bcc @ah_s2
         dec thr
@@ -1877,7 +2586,9 @@ ai_localizer:
 @have:  eor #$FF
         clc
         adc #1
-        sta tmp2                ; ψ_cmd = -clamp(px/8, ±10)
+        sec
+        sbc #4                  ; 侧风偏流前馈(风自左前 → 机头偏西压偏流)
+        sta tmp2                ; ψ_cmd = -clamp(px/8, ±10) - 4
         lda psi_hi
         sec
         sbc tmp2
@@ -2063,6 +2774,10 @@ legs_tick:
         jsr msg_set
         ldy #CH_WARN
         jsr chime_start
+        lda #M_TWR2
+        sta radio_q
+        lda #26
+        sta radio_t
 @ab_done:
         ; --- FLARE ---
         lda leg
@@ -2080,6 +2795,30 @@ legs_tick:
         sta leg
         jsr on_leg_enter
 @fl_done:
+        ; --- 拉平自动蹬正(改出偏流:ψ→0,漂移随之出现 → 别飘太久) ---
+        lda leg
+        cmp #LEG_FLARE
+        bne @dc_done
+        lda on_ground
+        bne @dc_done
+        lda psi_hi
+        beq @dc_done
+        cmp #128
+        bcs @dc_r
+        sec
+        lda psi_lo
+        sbc #8
+        sta psi_lo
+        bcs @dc_done
+        dec psi_hi
+        jmp @dc_done
+@dc_r:  clc
+        lda psi_lo
+        adc #8
+        sta psi_lo
+        bcc @dc_done
+        inc psi_hi
+@dc_done:
         ; --- 复飞(五边冲过头) ---
         lda leg
         cmp #LEG_FINAL
@@ -2115,6 +2854,167 @@ legs_tick:
         sta leg
         jsr on_leg_enter
 @ga_done:
+        ; --- 滑跑纪律:冲出跑道侧缘 / RIGHT RUDDER 提示 ---
+        lda on_ground
+        beq @roll_done
+        lda vint
+        cmp #12
+        bcc @roll_done
+        lda leg
+        cmp #LEG_ROLL
+        beq @roll_chk
+        cmp #LEG_ROLLOUT
+        bne @roll_done
+@roll_chk:
+        lda px_hi
+        bmi @vx_n
+        bne @veer
+        lda px_lo
+        cmp #31
+        bcs @veer
+        jmp @rud
+@vx_n:  cmp #$FF
+        bne @veer
+        lda px_lo
+        cmp #<(-30)
+        bcs @rud
+@veer:  lda crashed
+        bne @roll_done
+        lda #M_VEER
+        jsr msg_set
+        lda #1
+        sta crashed
+        lda #150
+        sta done_timer
+        lda #'E'
+        sta grades+5
+        lda #1
+        sta grades_dirty
+        lda #12
+        sta noise_burst
+        lda #2
+        sta jolt_m
+        lda #16
+        sta jolt_t
+        jmp @roll_done
+@rud:   lda pf_msg
+        bne @roll_done
+        lda psi_hi
+        cmp #128
+        bcc @roll_done          ; 没有左偏
+        cmp #255
+        beq @roll_done          ; 仅 -1 bdeg,不吵
+        inc pf_msg
+        lda #M_RUDDER
+        jsr msg_set
+        ldy #CH_WARN
+        jsr chime_start
+@roll_done:
+        ; --- 化油器加热提醒(空中收油门下滑) ---
+        lda on_ground
+        bne @cb_done
+        lda thr
+        cmp #3
+        bcs @cb_reset
+        lda carb_ok
+        bne @cb_done
+        lda h_hi
+        bne @cb_go
+        lda h_lo
+        cmp #150
+        bcc @cb_done
+@cb_go: inc carb_ok
+        lda #M_CARB
+        jsr msg_set
+        jmp @cb_done
+@cb_reset:
+        lda thr
+        cmp #5
+        bcc @cb_done
+        lda #0
+        sta carb_ok
+@cb_done:
+        ; --- 侧风偏流提示(五边偏出中线 ±90ft) ---
+        lda leg
+        cmp #LEG_FINAL
+        bne @cr_done
+        lda crab_msg
+        bne @cr_done
+        lda px_hi
+        bmi @cr_n
+        bne @cr_hit
+        lda px_lo
+        cmp #45
+        bcs @cr_hit
+        jmp @cr_done
+@cr_n:  cmp #$FF
+        bne @cr_hit
+        lda px_lo
+        cmp #<(-45)
+        bcs @cr_done
+@cr_hit:
+        inc crab_msg
+        lda #M_CRAB
+        jsr msg_set
+@cr_done:
+        ; --- 塔台随机复飞令(玩家第一圈,五边 150-240 ft 评估一次) ---
+        lda ai_on
+        bne @tg_done
+        lda ga_state
+        beq @tg_eval
+        cmp #2
+        bne @tg_done
+        lda ga_t
+        beq @tg_done
+        dec ga_t
+        lda thr
+        cmp #8
+        bcc @tg_done
+        lda flap_tgt
+        cmp #2
+        bcs @tg_done
+        lda #4
+        sta ga_state
+        lda #<300
+        sta tmp0
+        lda #>300
+        sta tmp1
+        jsr score_add16
+        lda #M_GAOK
+        jsr msg_set
+        jmp @tg_done
+@tg_eval:
+        lda leg
+        cmp #LEG_FINAL
+        bne @tg_done
+        lda h_hi
+        bne @tg_done
+        lda h_lo
+        cmp #240
+        bcs @tg_done
+        cmp #150
+        bcc @tg_done
+        lda lap
+        bne @tg_skip
+        lda gust_lfsr
+        and #$03
+        beq @tg_fire
+@tg_skip:
+        lda #3
+        sta ga_state
+        jmp @tg_done
+@tg_fire:
+        lda #2
+        sta ga_state
+        lda #180
+        sta ga_t
+        lda #M_TWRGA
+        jsr msg_set
+        ldy #CH_RADIO
+        jsr chime_start
+        lda #3
+        sta noise_burst
+@tg_done:
         ; --- 失速警告消息 ---
         lda horn_on
         beq @st_done
@@ -2354,8 +3254,16 @@ cmp_nm: lda num_hi
 on_leg_enter:
         lda #1
         sta hud_leg_dirty
+        lda #0
+        sta crab_msg
         ldx leg
-        lda leg_msg,x
+        cpx #LEG_XWIND
+        bne @no_r1
+        lda #M_TWR1
+        sta radio_q
+        lda #22
+        sta radio_t
+@no_r1: lda leg_msg,x
         beq @nomsg
         jsr msg_set
 @nomsg: ; AI 前馈姿态/油门/襟翼
@@ -2368,9 +3276,236 @@ on_leg_enter:
 @rts:   rts
 
 ; ============================================================================
+; 慢速层 v3 附加:电台/地面闪烁/中线行进/侧偏/扑面/航迹采样
+; ============================================================================
+slow_v3:
+        ; -- 电台队列 --
+        lda radio_t
+        beq @rq_done
+        dec radio_t
+        bne @rq_done
+        lda radio_q
+        beq @rq_done
+        ldx msg_timer
+        cpx #90
+        bcc @rq_go
+        lda #4
+        sta radio_t             ; 消息行占用,32 帧后再试
+        jmp @rq_done
+@rq_go: jsr msg_set
+        lda #0
+        sta radio_q
+        ldy #CH_RADIO
+        jsr chime_start
+        lda #3
+        sta noise_burst
+@rq_done:
+        ; -- 地面双相闪烁(行进感,节奏 ∝ 地速;只写 2 个调色板字节) --
+        lda gs_t
+        beq @gs_new
+        dec gs_t
+        jmp @gs_done
+@gs_new:
+        lda fade_mode
+        beq @gs_run
+        jmp @gs_done            ; 转场中不闪
+@gs_run:
+        lda vint
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        cmp #4
+        bcc @gs_p
+        lda #4
+@gs_p:  sta tmp0
+        sec
+        lda #5
+        sbc tmp0
+        sta gs_t
+        lda gs_phase
+        eor #1
+        sta gs_phase
+        ldy buf_w
+        cpy #150
+        bcs @gs_done
+        lda #$3F
+        sta ppu_buf,y
+        iny
+        lda #$0E
+        sta ppu_buf,y
+        iny
+        lda #2
+        sta ppu_buf,y
+        iny
+        sty tmp1
+        ldy #14
+        lda (pal_ptr),y
+        sta tmp2                ; c2 原值
+        iny
+        lda (pal_ptr),y
+        ldy tmp1
+        ldx gs_phase
+        bne @gs_swap
+        pha
+        lda tmp2
+        sta ppu_buf,y
+        iny
+        pla
+        sta ppu_buf,y
+        iny
+        jmp @gs_fin
+@gs_swap:
+        sta ppu_buf,y
+        iny
+        lda tmp2
+        sta ppu_buf,y
+        iny
+@gs_fin:
+        lda #$FF
+        sta ppu_buf,y
+        sty buf_w
+@gs_done:
+        ; -- 中线行进(最近距贴块,原位重画) --
+        lda rw_bucket
+        bne @mc_done
+        lda mch_t
+        beq @mc_new
+        dec mch_t
+        jmp @mc_done
+@mc_new:
+        lda vint
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        cmp #2
+        bcc @mc_p
+        lda #2
+@mc_p:  sta tmp0
+        sec
+        lda #3
+        sbc tmp0
+        sta mch_t
+        lda mch_phase
+        eor #1
+        sta mch_phase
+        lda rw_task
+        bne @mc_done
+        lda #2
+        sta rw_task
+@mc_done:
+        ; -- 跑道侧偏透视:skew = -clamp(px>>6, ±2)(近距 bucket≤2) --
+        lda #0
+        sta tmp0
+        lda rw_bucket
+        cmp #3
+        bcs @sk_set
+        lda px_hi
+        sta mul_hi
+        lda px_lo
+        sta mul_lo
+        ldx #6
+        jsr shrx
+        lda mul_hi
+        bmi @sk_n
+        bne @sk_m2
+        lda mul_lo
+        beq @sk_set             ; 0 → 0(tmp0 已 0)
+        cmp #2
+        bcs @sk_m2
+        lda #<(-1)
+        bne @sk_st
+@sk_m2: lda #<(-2)
+        bne @sk_st
+@sk_n:  cmp #$FF
+        bne @sk_p2
+        lda mul_lo
+        cmp #$FF
+        bne @sk_p2
+        lda #1
+        bne @sk_st
+@sk_p2: lda #2
+@sk_st: sta tmp0
+@sk_set:
+        lda tmp0
+        sta rw_skew
+        ; -- 低空地面扑面档 --
+        ldx #0
+        lda on_ground
+        bne @gr_lvl2
+        lda h_hi
+        bne @gr_cmp
+        lda h_lo
+        cmp #150
+        bcs @gr_cmp
+        inx
+        cmp #50
+        bcs @gr_cmp
+@gr_lvl2:
+        ldx #2
+@gr_cmp:
+        cpx grush
+        beq @gr_done
+        stx grush
+        lda #5
+        sta hz_task
+        lda #$FF
+        sta rw_drawn_b
+@gr_done:
+        ; -- 航迹采样(每 32 拍 ≈ 4.3s) --
+        inc trk_t
+        lda trk_t
+        and #$1F
+        bne @tk_done
+        ldx trk_i
+        cpx #48
+        bcs @tk_done
+        clc
+        lda px_lo
+        adc #<2400
+        sta tmp0
+        lda px_hi
+        adc #>2400
+        bmi @tk_zx
+        lsr a
+        ror tmp0
+        lsr a
+        ror tmp0
+        lsr a
+        ror tmp0
+        lsr a
+        ror tmp0
+        lda tmp0
+        jmp @tk_sx
+@tk_zx: lda #0
+@tk_sx: sta trk_bx,x
+        clc
+        lda py_lo
+        adc #<3200
+        sta tmp0
+        lda py_hi
+        adc #>3200
+        bmi @tk_zy
+        ldy #5
+@tk_ys: lsr a
+        ror tmp0
+        dey
+        bne @tk_ys
+        lda tmp0
+        jmp @tk_sy
+@tk_zy: lda #0
+@tk_sy: sta trk_by,x
+        inc trk_i
+@tk_done:
+        rts
+
+; ============================================================================
 ; 慢速层(每 8 帧):方位/距离/跑道显示档/PAPI
 ; ============================================================================
 slow_tick:
+        jsr slow_v3
         ; dx = -px, dy = -py(指向入口)
         sec
         lda #0
@@ -2573,11 +3708,14 @@ slow_tick:
 @papi_set:
         sta papi
 @rw_sched:
-        ; 跑道贴块需要重画?(档/列/地平线行变化)
+        ; 跑道贴块需要重画?(档/列/侧偏/地平线行变化)
         lda rw_task
         bne @rts
         lda rw_bucket
         cmp rw_drawn_b
+        bne @redo
+        lda rw_skew
+        cmp rw_drawn_s
         bne @redo
         lda rw_col
         cmp rw_drawn_c
@@ -2654,7 +3792,7 @@ ratio32:
 ; 视图更新(每帧):滚动、地平线任务、跑道贴块任务
 ; ============================================================================
 pan_update:
-        ; pan = ψ·2 - 128(9 位)
+        ; pan = ψ·2 - 128 + 震动(9 位)
         lda psi_hi
         asl a
         sta pan_lo
@@ -2664,6 +3802,24 @@ pan_update:
         sec
         lda pan_lo
         sbc #128
+        sta pan_lo
+        bcs @shk
+        lda pan_nt
+        eor #$01
+        sta pan_nt
+@shk:   lda shake_x
+        beq @rts
+        bmi @sh_n
+        clc
+        adc pan_lo
+        sta pan_lo
+        bcc @rts
+        lda pan_nt
+        eor #$01
+        sta pan_nt
+        rts
+@sh_n:  clc
+        adc pan_lo
         sta pan_lo
         bcs @rts
         lda pan_nt
@@ -2687,7 +3843,7 @@ view_tick:
         cmp hl_cur
         beq @hz_go
         sta hl_cur
-        lda #4
+        lda #5
         sta hz_task
         ; 地平线变行会盖掉跑道贴块 → 待重画
         lda #$FF
@@ -2695,11 +3851,11 @@ view_tick:
 @hz_go: lda hz_task
         beq @rw_go
         lda buf_w
-        cmp #120
+        cmp #112
         bcs @rts                ; 缓冲紧张,下帧再画
-        ; 每帧重画一行(行 6..9):row = 10 - task
+        ; 每帧重画一行(行 6..10):row = 11 - task
         sec
-        lda #10
+        lda #11
         sbc hz_task
         jsr hz_emit_row
         dec hz_task
@@ -2722,10 +3878,38 @@ view_tick:
         sta rw_task
 @rts:   rts
 
-; 发射地平线行 A=row(6..9):两个 NT 各 32 字节
+; A=行(6-10)→ 地面瓦片:低空扑面粗纹理 + 行奇偶双相(调色板行进)
+gnd_tile:
+        tax
+        lda grush
+        beq @fine
+        cmp #2
+        bcs @co9
+        cpx #10
+        bcs @coarse
+        bcc @fine
+@co9:   cpx #9
+        bcs @coarse
+@fine:  txa
+        and #$01
+        beq @f_a
+        lda #$69
+        rts
+@f_a:   lda #$68
+        rts
+@coarse:
+        txa
+        and #$01
+        beq @c_a
+        lda #$7D
+        rts
+@c_a:   lda #$7C
+        rts
+
+; 发射地平线行 A=row(6..10):两个 NT 各 32 字节
 hz_emit_row:
         sta tmp4                ; row
-        ; 决定该行瓦片:row < hl_row → $00;== → $60+sub;> → $68
+        ; 决定该行瓦片:row < hl_row → $00;== → $60+sub;> → 地面
         lda hl_cur
         lsr a
         lsr a
@@ -2735,8 +3919,9 @@ hz_emit_row:
         cmp tmp5
         bcc @sky
         beq @line
-        lda #$68
-        bne @have
+        lda tmp4
+        jsr gnd_tile
+        jmp @have
 @sky:   lda #$00
         beq @have
 @line:  lda hl_cur
@@ -2800,7 +3985,7 @@ hz_emit_row:
         sty buf_w
         rts
 
-; 擦除已画跑道区(11 列 × 3 行,地面色)
+; 擦除已画跑道区(13 列 × 3 行,地面双相瓦片)+ 恢复地面调色板
 rw_erase:
         lda rw_drawn_b
         cmp #$FF
@@ -2811,34 +3996,88 @@ rw_erase:
 @row:   stx tmp3
         lda tmp4
         cmp #11
-        bcs @done
+        bcs @attr
         lda rw_drawn_c
         sec
-        sbc #5
+        sbc #6
         and #$3F
         sta tmp2
-        lda #11
+        lda #13
         sta tmp5
-        lda #$68
+        lda tmp4
+        jsr gnd_tile
         sta tmp6
         jsr emit_run
         inc tmp4
         ldx tmp3
         dex
         bne @row
+@attr:  ; 属性恢复 pal3($FF)
+        lda rw_att_c
+        cmp #$FF
+        beq @done
+        ldx rw_att_n
+        beq @att_z
+@al:    stx tmp3
+        lda rw_att_c
+        clc
+        adc tmp3
+        sec
+        sbc #1
+        and #$0F
+        jsr rw_attr_addr
+        ldy buf_w
+        lda tmp0
+        sta ppu_buf,y
+        iny
+        lda tmp1
+        sta ppu_buf,y
+        iny
+        lda #1
+        sta ppu_buf,y
+        iny
+        lda #$FF
+        sta ppu_buf,y
+        iny
+        lda #$FF
+        sta ppu_buf,y
+        sty buf_w
+        ldx tmp3
+        dex
+        bne @al
+@att_z: lda #$FF
+        sta rw_att_c
 @done:  lda #$FF
         sta rw_drawn_b
 @rts:   rts
 
+; A=属性格(0-15,bit3=NT)→ tmp0=地址高 tmp1=地址低(行 8-11 的属性行)
+rw_attr_addr:
+        tax
+        and #$07
+        clc
+        adc #$D0
+        sta tmp1
+        lda #$23
+        cpx #8
+        bcc @nt0
+        lda #$27
+@nt0:   sta tmp0
+        rts
+
 ; 画跑道贴块(rw_bucket 0..4 → 表;5 → 仅精灵)
+; 行处理:侧偏(顶行全偏/中行半偏)→ 垫宽到属性格 → 中线相位替换 → 发射
 rw_draw_stamp:
         lda rw_bucket
         cmp #5
-        bcs @sprite_only
-        ; 记录
+        bcc @stamp_go
+        jmp @sprite_only
+@stamp_go:
         sta rw_drawn_b
         lda rw_col
         sta rw_drawn_c
+        lda rw_skew
+        sta rw_drawn_s
         lda hl_cur
         lsr a
         lsr a
@@ -2847,7 +4086,6 @@ rw_draw_stamp:
         adc #1
         sta rw_drawn_r
         sta tmp4                ; 当前行
-        ; 表指针
         lda rw_bucket
         asl a
         tax
@@ -2857,33 +4095,146 @@ rw_draw_stamp:
         sta ptr_hi
         ldy #0
         lda (ptr_lo),y
-        sta tmp3                ; 行数
+        sta tmp3                ; 剩余行数
         iny
 @row:   lda tmp4
         cmp #11
-        bcs @done
+        bcc @row_go
+        jmp @attr
+@row_go:
         lda (ptr_lo),y
         iny
-        sta tmp5                ; 宽
-        ; 起始列 = rw_col - 宽/2
+        sta tmp5                ; 原宽
         lsr a
-        sta tmp2
+        sta tmp0
         lda rw_col
         sec
-        sbc tmp2
+        sbc tmp0
+        ; 行侧偏:最末行不偏,中行半偏,其上全偏
+        ldx tmp3
+        dex
+        beq @sk_done
+        cpx #1
+        bne @sk_full
+        sta tmp0
+        lda rw_skew
+        cmp #$80
+        ror a
+        clc
+        adc tmp0
+        jmp @sk_done
+@sk_full:
+        clc
+        adc rw_skew
+@sk_done:
         and #$3F
-        sta tmp2
-        ; 数据在 (ptr),y…先收集到发射器:emit_run_tiles
-        jsr emit_run_tiles
+        sta tmp7                ; 未垫起点
+        and #$03
+        sta tmp0                ; 左垫
+        lda tmp7
+        and #$3C
+        sta tmp2                ; 垫后起点
+        ; 垫后宽 =(左垫+宽+3)&~3,钳 16
+        lda tmp0
+        clc
+        adc tmp5
+        clc
+        adc #3
+        and #$FC
+        cmp #17
+        bcc @pw_ok
+        lda #16
+@pw_ok: sta tmp7                ; 垫后宽
+        ; 本行垫瓦片
+        lda tmp4
+        jsr gnd_tile
+        sta tmp6
+        ; 填暂存:左垫 | 数据(中线相位替换) | 右垫
+        ldx #0
+@lp:    cpx tmp0
+        bcs @data
+        lda tmp6
+        sta stage,x
+        inx
+        bne @lp
+@data:  lda tmp5
+        sta tmp0                ; 复用:剩余数据数
+@dl:    lda (ptr_lo),y
+        iny
+        cmp #$73
+        bne @d_put
+        lda mch_phase
+        beq @d_73
+        lda #$7E
+        bne @d_put
+@d_73:  lda #$73
+@d_put: sta stage,x
+        inx
+        dec tmp0
+        bne @dl
+@rp:    cpx tmp7
+        bcs @emit
+        lda tmp6
+        sta stage,x
+        inx
+        bne @rp
+@emit:  lda tmp7
+        sta tmp5                ; 发射宽 = 垫后宽
+        sty tmp1
+        jsr emit_stage
+        ldy tmp1
         inc tmp4
         dec tmp3
-        bne @row
-@done:  rts
+        beq @attr
+        jmp @row
+@attr:  ; 跑道格切 pal1(白标线可用);记录以便擦除恢复
+        lda tmp2
+        lsr a
+        lsr a
+        sta rw_att_c
+        lda tmp5
+        lsr a
+        lsr a
+        sta rw_att_n
+        beq @adone
+        ldx rw_att_n
+@al:    stx tmp3
+        lda rw_att_c
+        clc
+        adc tmp3
+        sec
+        sbc #1
+        and #$0F
+        jsr rw_attr_addr
+        ldy buf_w
+        cpy #190
+        bcs @adone
+        lda tmp0
+        sta ppu_buf,y
+        iny
+        lda tmp1
+        sta ppu_buf,y
+        iny
+        lda #1
+        sta ppu_buf,y
+        iny
+        lda #$55
+        sta ppu_buf,y
+        iny
+        lda #$FF
+        sta ppu_buf,y
+        sty buf_w
+        ldx tmp3
+        dex
+        bne @al
+@adone: rts
 @sprite_only:
         lda #5
         sta rw_drawn_b
         lda rw_col
         sta rw_drawn_c
+        lda rw_skew
+        sta rw_drawn_s
         lda #10
         sta rw_drawn_r          ; 无贴块
         rts
@@ -2937,11 +4288,10 @@ emit_run:
         sta ppu_buf,y
         rts
 
-; 表数据行段:tmp2=起始列 tmp4=行 tmp5=宽,数据在 (ptr),y(推进 y)
-emit_run_tiles:
-        sty tmp1                ; 保存数据游标
+; 暂存行段发射:tmp2=起始列 tmp4=行 tmp5=宽,数据在 stage
+emit_stage:
         jsr run_setup
-        ldy tmp1
+        ldy #0
         ; 段 1(tmp7 个)
         lda tmp7
         beq @s2
@@ -2956,7 +4306,7 @@ emit_run_tiles:
         lda tmp7
         sta ppu_buf,x
         inx
-@c1:    lda (ptr_lo),y
+@c1:    lda stage,y
         iny
         sta ppu_buf,x
         inx
@@ -2978,7 +4328,7 @@ emit_run_tiles:
         lda tmp0
         sta ppu_buf,x
         inx
-@c2:    lda (ptr_lo),y
+@c2:    lda stage,y
         iny
         sta ppu_buf,x
         inx
@@ -3196,29 +4546,23 @@ hud_f3: ; HDG(3)@ row16 col18:deg = ψ + ψ·13/32
         bne @c
         jmp hud_term
 
-hud_f4: ; RPM(4)@ row17 col18(查表)
-        lda thr
-        asl a
-        asl a
-        tax
+hud_f4: ; RPM(4)@ row17 col18(真实转速:定距桨随空速,带惯性)
+        lda rpm_lo
+        sta num_lo
+        lda rpm_hi
+        sta num_hi
+        jsr b2d16
         lda #$22
-        stx tmp3
         ldx #$32
         ldy #4
         jsr buf_open
-        ldx tmp3
-        lda rpm_str,x
+        ldx #1
+@c:     lda dec_buf,x
         sta ppu_buf,y
         iny
-        lda rpm_str+1,x
-        sta ppu_buf,y
-        iny
-        lda rpm_str+2,x
-        sta ppu_buf,y
-        iny
-        lda rpm_str+3,x
-        sta ppu_buf,y
-        iny
+        inx
+        cpx #5
+        bne @c
         jmp hud_term
 
 hud_f5: ; FLP(2)@ row18 col18 + PIT(±2)@ col25
@@ -3793,13 +5137,62 @@ game_sprites:
         inx
         cpx #16
         bne @arr
-        rts
+        jmp @v3_spr
 @arr_off:
         lda #$F8
         sta oam+56
         sta oam+60
         sta oam+64
         sta oam+68
+@v3_spr:
+        ; --- 油门旋钮(仪表台滑槽上) ---
+        lda #182
+        sta oam+72
+        lda #$52
+        sta oam+73
+        lda #$00
+        sta oam+74
+        lda thr
+        asl a
+        asl a
+        asl a
+        clc
+        adc #160
+        sta oam+75
+        ; --- 坡度云暗示:压坡度时两侧云反向升降(外景滚转感) ---
+        lda on_ground
+        bne @cl_off
+        lda bank88_hi
+        cmp #$80
+        ror a
+        cmp #$80
+        ror a                   ; bank/4(±7)
+        sta tmp0
+        sec
+        lda #24
+        sbc tmp0
+        sta oam+76
+        lda #$51
+        sta oam+77
+        lda #$00
+        sta oam+78
+        lda #44
+        sta oam+79
+        clc
+        lda #28
+        adc tmp0
+        sta oam+80
+        lda #$51
+        sta oam+81
+        lda #$00
+        sta oam+82
+        lda #204
+        sta oam+83
+        rts
+@cl_off:
+        lda #$F8
+        sta oam+76
+        sta oam+80
         rts
 
 ; 标题画面的侧视飞机(v1 版,OAM 1-6)
@@ -3873,6 +5266,10 @@ enter_debrief:
         lda #0
         sta pan_lo
         sta pan_nt
+        sta tt_lo
+        sta tt_hi
+        sta shake_x
+        sta shake_fy
         jsr draw_debrief
         lda #$FF
         sta ppu_buf
@@ -3903,26 +5300,170 @@ enter_debrief:
 
 tick_debrief:
         lda pad_new
+        and #BTN_SEL
+        beq @n_sel
+        lda #1
+        jmp fade_begin
+@n_sel: lda pad_new
         and #BTN_STA
+        beq @auto
+        ; START:玩家完好落地 → 昼夜进阶续飞(总分累计);否则重新开局
+        lda crashed
+        bne @fresh
+        lda ai_on
+        bne @fresh
+        lda night_lvl
+        cmp #2
+        bcs @cont
+        inc night_lvl
+@cont:  lda #1
+        sta cont_flag
+        lda #0
+        sta fade_arg
+        lda #2
+        jmp fade_begin
+@fresh: lda #0
+        sta fade_arg
+        sta cont_flag
+        lda #2
+        jmp fade_begin
+@auto:  ; 演示讲评 ~13s 后自动回标题(循环吸引)
+        lda ai_on
         beq @rts
-        jmp enter_title
+        inc tt_lo
+        bne @rts
+        inc tt_hi
+        lda tt_hi
+        cmp #3
+        bcc @rts
+        lda #1
+        jmp fade_begin
 @rts:   rts
 
 ; ============================================================================
 ; 画面绘制(渲染关时直写)
 ; ============================================================================
 load_palettes:
+        ldx night_lvl
+        lda palset_lo,x
+        sta pal_ptr
+        lda palset_hi,x
+        sta pal_ptr+1
         lda #$3F
         sta $2006
         lda #$00
         sta $2006
-        ldx #0
-@p:     lda palettes,x
-        sta $2007
-        inx
-        cpx #32
+        lda fade_step
+        asl a
+        asl a
+        asl a
+        asl a
+        sta tmp0
+        ldy #0
+@p:     lda (pal_ptr),y
+        sec
+        sbc tmp0
+        bcs @ok
+        lda #$0F
+@ok:    sta $2007
+        iny
+        cpy #32
         bne @p
         rts
+
+; ---------------- 转场渐变 ----------------
+; 请求转场:A = 1 标题 / 2 游戏 / 3 讲评
+fade_begin:
+        ldx fade_mode
+        bne @rts
+        sta fade_next
+        lda #1
+        sta fade_mode
+        lda #0
+        sta fade_step
+        lda #1
+        sta fade_t
+@rts:   rts
+
+fade_tick:
+        lda fade_mode
+        bne @go
+        rts
+@go:    dec fade_t
+        beq @step
+        rts
+@step:  lda #5
+        sta fade_t
+        lda fade_mode
+        cmp #1
+        beq @out
+        lda fade_step
+        beq @in_done
+        dec fade_step
+        jmp fade_emit
+@in_done:
+        lda #0
+        sta fade_mode
+        rts
+@out:   lda fade_step
+        cmp #4
+        bcs @switch
+        inc fade_step
+        jmp fade_emit
+@switch:
+        lda #2
+        sta fade_mode           ; 黑场切换后变亮
+        lda fade_next
+        cmp #1
+        bne @n_t
+        jmp enter_title
+@n_t:   cmp #2
+        bne @n_g
+        lda fade_arg
+        sta ai_on
+        jmp enter_game
+@n_g:   jmp enter_debrief
+
+; 发射按 fade_step 暗化的整套调色板(缓冲)
+fade_emit:
+        ldy buf_w
+        cpy #150
+        bcs @rts
+        lda #$3F
+        sta ppu_buf,y
+        iny
+        lda #$00
+        sta ppu_buf,y
+        iny
+        lda #32
+        sta ppu_buf,y
+        iny
+        sty tmp1
+        lda fade_step
+        asl a
+        asl a
+        asl a
+        asl a
+        sta tmp0
+        ldy #0
+@l:     lda (pal_ptr),y
+        sec
+        sbc tmp0
+        bcs @ok
+        lda #$0F
+@ok:    sty tmp2
+        ldy tmp1
+        sta ppu_buf,y
+        inc tmp1
+        ldy tmp2
+        iny
+        cpy #32
+        bne @l
+        ldy tmp1
+        lda #$FF
+        sta ppu_buf,y
+        sty buf_w
+@rts:   rts
 
 clear_nts:
         lda #$20
@@ -3966,11 +5507,19 @@ fill_run:
 ; ---------------- 座舱静态画面 ----------------
 draw_cockpit_static:
         jsr clear_nts
-        ; 属性:行 0-7 pal2($AA),行 8-11 pal1($55),行 12+ pal0($00)
+        ; 属性:行 0-3 pal2,行 4-7 pal1,行 8-11 pal3(地面双相),行 12+ pal0
         ldx #0
         jsr @attr_one
         ldx #4
         jsr @attr_one
+        ; 仪表格:空速表(格 0)pal1 = 绿/白弧;姿态仪(格 1)pal2 = 天蓝/藏青面
+        lda #$23
+        ldx #$D8
+        jsr set_addr
+        lda #$55
+        sta $2007
+        lda #$AA
+        sta $2007
         jmp @sky
 @attr_one:
         txa
@@ -3984,11 +5533,16 @@ draw_cockpit_static:
 @a0:    sta $2007
         dey
         bne @a0
-        ldy #16
-        lda #$55                ; 行 4-11:山影/地面 pal1(地平线全程绿)
+        ldy #8
+        lda #$55                ; 行 4-7:山影/地平线上带 pal1
 @a1:    sta $2007
         dey
         bne @a1
+        ldy #8
+        lda #$FF                ; 行 8-11:地面 pal3(闪烁行进)
+@a1b:   sta $2007
+        dey
+        bne @a1b
         ldy #40
         lda #$00
 @a2:    sta $2007
@@ -4073,16 +5627,10 @@ draw_cockpit_static:
         lda #9
         sta tmp4
         jsr row_addr
-        ldx #0
-@g9:    txa
-        and #$01
-        beq @g9a
-        lda #$69
-        bne @g9p
-@g9a:   lda #$68
-@g9p:   sta $2007
-        inx
-        cpx #32
+        lda #$69                ; 行奇偶双相(调色板行进用)
+        ldx #32
+@g9:    sta $2007
+        dex
         bne @g9
         lda #10
         sta tmp4
@@ -4130,22 +5678,28 @@ draw_cockpit_static:
         iny
         cpy #30
         bne @pf_row
-        ; 六联表圈:两行三列
+        ; 六联表圈:两行三列(空速表带彩弧面,姿态仪带天地面)
+        lda #$90
         ldx #1
         ldy #13
         jsr draw_bezel
+        lda #$99
         ldx #5
         ldy #13
         jsr draw_bezel
+        lda #$80
         ldx #9
         ldy #13
         jsr draw_bezel
+        lda #$80
         ldx #1
         ldy #16
         jsr draw_bezel
+        lda #$80
         ldx #5
         ldy #16
         jsr draw_bezel
+        lda #$80
         ldx #9
         ldy #16
         jsr draw_bezel
@@ -4267,6 +5821,23 @@ draw_cockpit_static:
         jsr set_addr
         lda #$8E
         sta $2007
+        ; 油门滑槽(行 23:标签 + 槽)
+        lda #<s_thr
+        sta ptr_lo
+        lda #>s_thr
+        sta ptr_hi
+        lda #$22
+        ldx #$F0
+        jsr set_addr
+        jsr draw_str
+        lda #$22
+        ldx #$F4
+        jsr set_addr
+        lda #'-'
+        ldx #9
+@thr_s: sta $2007
+        dex
+        bne @thr_s
         ; 行 27 提示(列 3)
         lda #<s_hint
         sta ptr_lo
@@ -4302,8 +5873,9 @@ row_addr:
         sta $2006
         rts
 
-; 表圈 3×3:X=列 Y=起始行(渲染关直写)
+; 表圈 3×3:A=基瓦片 X=列 Y=起始行(渲染关直写)
 draw_bezel:
+        sta tmp1
         stx tmp2
         sty tmp3
         ldx #0
@@ -4329,13 +5901,13 @@ draw_bezel:
         sta $2006
         pla
         sta $2006
-        ; tile = $80 + r·3 起连续 3 个
+        ; tile = 基 + r·3 起连续 3 个
         lda tmp7
         asl a
         clc
         adc tmp7
         clc
-        adc #$80
+        adc tmp1
         sta $2007
         clc
         adc #1
@@ -4498,17 +6070,10 @@ draw_title:
         ldy #26
 @gr_r:  sty tmp4
         jsr row_addr
-        ldx #0
-@gr:    txa
-        eor tmp4
-        and #$01
-        beq @gr_a
-        lda #$69
-        bne @gr_p
-@gr_a:  lda #$68
-@gr_p:  sta $2007
-        inx
-        cpx #32
+        lda #$68
+        ldx #32
+@gr:    sta $2007
+        dex
         bne @gr
         ldy tmp4
         iny
@@ -4566,7 +6131,7 @@ draw_debrief:
         lda #0
         sta tmp5
         jsr row_addr
-        ; 列 8:重设地址
+        ; 列 2:重设地址
         lda tmp4
         asl a
         asl a
@@ -4574,7 +6139,7 @@ draw_debrief:
         asl a
         asl a
         clc
-        adc #8
+        adc #2
         tax
         lda tmp4
         lsr a
@@ -4606,13 +6171,93 @@ draw_debrief:
         inx
         cpx #6
         bne @leg
+        ; ---- 航迹回放图(右侧):跑道线 + 采样点 ----
+        lda #<str_track
+        sta ptr_lo
+        lda #>str_track
+        sta ptr_hi
+        lda #$20
+        ldx #$95
+        jsr set_addr
+        jsr draw_str
+        ldx #7                  ; 跑道:col 26 行 7-10
+@rwm:   stx tmp4
+        txa
+        asl a
+        asl a
+        asl a
+        asl a
+        asl a
+        clc
+        adc #26
+        tay
+        txa
+        lsr a
+        lsr a
+        lsr a
+        clc
+        adc #$20
+        sta $2006
+        sty $2006
+        lda #$8E
+        sta $2007
+        ldx tmp4
+        inx
+        cpx #11
+        bne @rwm
+        ldx #0
+@pt:    cpx trk_i
+        bcs @pt_done
+        stx tmp0
+        lda trk_bx,x
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        clc
+        adc #17
+        sta tmp2                ; 列 17-27
+        sec
+        lda #187
+        sbc trk_by,x
+        bcs @py_ok
+        lda #0
+@py_ok: lsr a
+        lsr a
+        lsr a
+        lsr a
+        clc
+        adc #5
+        sta tmp4                ; 行 5-16
+        asl a
+        asl a
+        asl a
+        asl a
+        asl a
+        clc
+        adc tmp2
+        tay
+        lda tmp4
+        lsr a
+        lsr a
+        lsr a
+        clc
+        adc #$20
+        sta $2006
+        sty $2006
+        lda #'.'
+        sta $2007
+        ldx tmp0
+        inx
+        bne @pt
+@pt_done:
         ; 接地:TOUCH ±fpm + OFFSET
         lda #<str_touch
         sta ptr_lo
         lda #>str_touch
         sta ptr_hi
         lda #$22
-        ldx #$48
+        ldx #$42
         jsr set_addr
         jsr draw_str
         lda ldg_fpm_lo
@@ -4637,7 +6282,7 @@ draw_debrief:
         lda #>str_score
         sta ptr_hi
         lda #$22
-        ldx #$88
+        ldx #$82
         jsr set_addr
         jsr draw_str
         lda score_lo
@@ -4705,12 +6350,33 @@ draw_debrief:
         ldx #$C3
         jsr set_addr
         jsr draw_str
+        ; 续飞提示(完好玩家落地 → 昼夜进阶;否则 PRESS START)
+        lda crashed
+        bne @h_press
+        lda ai_on
+        bne @h_press
+        ldx night_lvl
+        lda nexthint_lo,x
+        sta ptr_lo
+        lda nexthint_hi,x
+        sta ptr_hi
+        jmp @h_draw
+@h_press:
         lda #<str_press
         sta ptr_lo
         lda #>str_press
         sta ptr_hi
+@h_draw:
         lda #$23
-        ldx #$2A
+        ldx #$25
+        jsr set_addr
+        jsr draw_str
+        lda #<str_totitle
+        sta ptr_lo
+        lda #>str_totitle
+        sta ptr_hi
+        lda #$23
+        ldx #$69
         jsr set_addr
         jsr draw_str
         rts
@@ -4718,9 +6384,10 @@ draw_debrief:
 ; ============================================================================
 ; 声音(v1 引擎,喇叭改为迎角驱动)
 ; ============================================================================
-CH_OK   = 0
-CH_WARN = 4
-CH_BLIP = 8
+CH_OK    = 0
+CH_WARN  = 4
+CH_BLIP  = 8
+CH_RADIO = 12
 
 chime_start:
         sty chime_base
@@ -4744,7 +6411,7 @@ sound_tick:
         sta $4000
         sta $400C
         jmp @chime
-@game:  ldx thr
+@game:  ldx eng_idx             ; 声调随真实转速(含惯性/风车效应)
         lda eng_per_lo,x
         clc
         adc frame
@@ -4760,7 +6427,7 @@ sound_tick:
         beq @evol
         lda #$72
         bne @ev
-@evol:  ldx thr
+@evol:  ldx eng_idx
         lda eng_vol,x
         ora #$70
 @ev:    sta $4000
@@ -4824,7 +6491,14 @@ sound_tick:
         lda #$0C
         sta $400E
         bne @tri
-@wind:  lda vint
+@wind:  lda flap_mov
+        beq @wnat
+        lda #$33                ; 襟翼电机运转:轻微电流嗡声
+        sta $400C
+        lda #$08
+        sta $400E
+        bne @tri
+@wnat:  lda vint
         lsr a
         lsr a
         lsr a
@@ -4947,17 +6621,51 @@ music_tick:
 
 .include "aero_tables.inc"
 
+; 调色板三套:白天/黄昏/夜航(圈数进阶)。布局:
+;   BG0 面板/字  BG1 跑道带(藏青体/白标线/绿垫) BG2 天空物+姿态仪面  BG3 地面双绿(闪烁行进)
 palettes:
-        ; BG:0 面板/字  1 地面(绿/藏青/白) 2 天空物  3 备用
+pal_day:
         .byte $22,$0F,$2D,$30
         .byte $22,$02,$19,$30
         .byte $22,$02,$11,$30
-        .byte $22,$0F,$16,$27
-        ; SPR:0 指针/PAPI/灯(白+红) 1 箭头橙 2 灰(千位针/地图点) 3 备用
+        .byte $22,$02,$19,$1A
         .byte $22,$0F,$30,$16
         .byte $22,$0F,$30,$27
         .byte $22,$0F,$2D,$10
         .byte $22,$0F,$30,$27
+pal_dusk:
+        .byte $26,$0F,$2D,$30
+        .byte $26,$03,$08,$30
+        .byte $26,$03,$14,$36
+        .byte $26,$03,$08,$18
+        .byte $26,$0F,$30,$16
+        .byte $26,$0F,$30,$27
+        .byte $26,$0F,$2D,$10
+        .byte $26,$0F,$30,$27
+pal_night:
+        .byte $0F,$0F,$06,$16
+        .byte $0F,$00,$08,$30
+        .byte $0F,$00,$04,$2D
+        .byte $0F,$00,$08,$09
+        .byte $0F,$0F,$30,$16
+        .byte $0F,$0F,$30,$27
+        .byte $0F,$0F,$2D,$10
+        .byte $0F,$0F,$30,$27
+palset_lo: .byte <pal_day,<pal_dusk,<pal_night
+palset_hi: .byte >pal_day,>pal_dusk,>pal_night
+
+; P-factor(左偏,8.8 bdeg/帧,按油门;>85kt 减半,>100kt 无)
+pf_tab:    .byte 0,0,0,0,1,1,1,2,2
+
+; 定常风:来自 300°/8kt(36 号跑道左前侧风),阵风三档 ±25%
+; 分量(朝 120°):东 +6.9kt、北 -4.0kt;单位 8.8 ft/2 每帧(kt×3.6)
+wind_e_tab: .byte 19,25,31
+wind_n_tab: .byte <(-11),<(-14),<(-18)
+
+; 定距桨:目标转速 = base[thr] + V×slp[thr]>>3;怠速高速风车效应
+rpm_base_lo: .byte <700,<900,<1100,<1300,<1500,<1700,<1900,<2100,<2300
+rpm_base_hi: .byte >700,>900,>1100,>1300,>1500,>1700,>1900,>2100,>2300
+rpm_slp:     .byte 16,6,8,10,12,15,18,21,24
 
 ; 指针方向表(枢轴像素 (0,7);翻转覆盖 16 向)
 ndl_tile: .byte $04,$05,$06,$07,$08,$07,$06,$05,$04,$05,$06,$07,$08,$07,$06,$05
@@ -5022,6 +6730,8 @@ ldg_score:  .word 2000,1200,700,300
 
 ; 转弯目标航向(bdeg):一转 270°,二转 180°,三转 90°,四转 0°
 turn_tgt:   .byte 192,128,64,0
+; 各航段标称航向(直线段航向保持用)
+leg_hdg:    .byte 0,0,192,128,64,0,0,0,0
 
 ; AI 表:油门/襟翼/前馈姿态(半度)
 ;                ROLL UPW XW  DWN BAS FIN FLR RO  DONE
@@ -5074,11 +6784,15 @@ msg_lo:
         .byte <m1,<m2,<m3,<m4,<m5,<m6,<m7,<m8,<m9
         .byte <m10,<m11,<m12,<m13,<m14,<m15,<m16,<m17,<m18
         .byte <m19,<m20,<m21,<m22
+        .byte <m23,<m24,<m25,<m26,<m27,<m28,<m29,<m30
+        .byte <m31,<m32,<m33,<m34,<m35,<m36
 msg_hi:
         .byte 0
         .byte >m1,>m2,>m3,>m4,>m5,>m6,>m7,>m8,>m9
         .byte >m10,>m11,>m12,>m13,>m14,>m15,>m16,>m17,>m18
         .byte >m19,>m20,>m21,>m22
+        .byte >m23,>m24,>m25,>m26,>m27,>m28,>m29,>m30
+        .byte >m31,>m32,>m33,>m34,>m35,>m36
 m1:     .byte "FULL POWER : ROTATE AT 55",0
 m2:     .byte "CLIMB AT VY 74",0
 m3:     .byte "CROSSWIND : CLIMB TO 1000",0
@@ -5101,6 +6815,20 @@ m19:    .byte "FLAPS UP",0
 m20:    .byte "FLAPS 10",0
 m21:    .byte "FLAPS 20",0
 m22:    .byte "FLAPS 30",0
+m23:    .byte "RIGHT RUDDER !",0
+m24:    .byte "CRAB INTO THE WIND !",0
+m25:    .byte "BOUNCED ! EASE IT ON",0
+m26:    .byte "PORPOISE ! HOLD IT OFF ...",0
+m27:    .byte "NOSE WHEEL FIRST !",0
+m28:    .byte "SIDE LOAD ! TOUCH SOONER",0
+m29:    .byte "FLAPS OVERSPEED ! < 85 KT",0
+m30:    .byte "CARB HEAT ON",0
+m31:    .byte "TWR : REPORT DOWNWIND",0
+m32:    .byte "TWR : CLEARED TO LAND RWY 36",0
+m33:    .byte "TWR : GO AROUND ! TRAFFIC !",0
+m34:    .byte "GOOD GO AROUND ! + 300",0
+m35:    .byte "WING DROP ! UNSTALL !",0
+m36:    .byte "VEERED OFF THE RUNWAY !",0
 
 str_press: .byte "PRESS START",0
 str_sub:   .byte "TRAFFIC PATTERN TRAINER",0
@@ -5116,6 +6844,14 @@ str_r1:    .byte "RATING : READY FOR SOLO",0
 str_r2:    .byte "RATING : STUDENT PILOT",0
 str_r3:    .byte "RATING : MORE PATTERN WORK",0
 str_r_crash: .byte "RATING : SEE THE MECHANIC ...",0
+str_next1: .byte "START : DUSK CIRCUIT",0
+str_next2: .byte "START : NIGHT CIRCUIT",0
+str_next3: .byte "START : ANOTHER NIGHT ROUND",0
+nexthint_lo: .byte <str_next1,<str_next2,<str_next3
+nexthint_hi: .byte >str_next1,>str_next2,>str_next3
+str_totitle: .byte "SELECT : TITLE",0
+str_track: .byte "TRACK",0
+s_thr:   .byte "THR",0
 
 eng_per_lo: .byte <2047,<2047,<1864,<1543,<1316,<1147,<1017,<913,<828
 eng_per_hi: .byte >2047,>2047,>1864,>1543,>1316,>1147,>1017,>913,>828
@@ -5130,6 +6866,7 @@ chime_tab:
         .byte 10,12,13,0
         .byte 7,5,7,0
         .byte 12,0,0,0
+        .byte 3,3,0,0           ; CH_RADIO:低音双响(配噪声沙沙)
 
 mus_sq1:
         .byte 5,12, 7,12, 10,12, 7,12,  8,12, 10,12, 12,12, 10,12
