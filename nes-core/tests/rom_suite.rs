@@ -445,3 +445,30 @@ fn c172s_game_boots_and_demos() {
         "演示开局 HUD 异常:\n{hud}"
     );
 }
+
+/// 《比武大会》自研游戏 ROM:标题 → 闲置进教学卡+AI 演示对局冒烟。
+#[test]
+fn tourney_game_boots_and_demos() {
+    let rom = std::fs::read(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../game/tourney/tourney.nes"),
+    )
+    .expect("读 game/tourney/tourney.nes(由 game/tourney/build.sh 生成并入库)");
+    let mut nes = Nes::insert(&rom).unwrap();
+    for _ in 0..150 {
+        nes.run_frame();
+    }
+    let title = nametable_text(&nes);
+    assert!(
+        title.contains("GRAND") && title.contains("CAMPAIGN"),
+        "标题画面异常:\n{title}"
+    );
+    // ~10 秒闲置 → 教学卡 → AI vs AI 演示对局,竞技场 HUD 应上屏
+    for _ in 150..1700 {
+        nes.run_frame();
+    }
+    let hud = nametable_text(&nes);
+    assert!(
+        hud.contains("SEAT") && hud.contains("YOU"),
+        "演示对局 HUD 异常:\n{hud}"
+    );
+}

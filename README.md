@@ -91,6 +91,20 @@ Options = Start,十字键与左摇杆等效。
   `SUBSYSTEM=="hidraw", ATTRS{idVendor}=="054c", MODE="0660", TAG+="uaccess"`。
 - 蓝牙配对:长按 DualSense 的 PS + Create 键至灯条闪烁,系统蓝牙里配对即可。
 
+## 附带游戏:《比武大会》骑士长枪比武
+
+`game/tourney/` 是第二个**从零 6502 汇编原创 NES 游戏**(NROM,`tourney.nes`
+已入库):中世纪马上长枪比武,《Punch-Out!!》式读招对决——B 持盾 A 固枪,
+上/中/下三线,贴身固枪才有完美一击,出枪太早会被高手看破换盾。
+**骑士精神写进规则**:致意、饶过断盾者、扶起坠马对手挣荣誉;低刺失德、
+击马犯规当场判负;荣誉决定平局裁决、决赛再战权与三种结局。战役七将各有
+性情(早枪/高盾/假盾/看破早枪/低刺者),另有 2P 同屏对战与 AI 演示循环。
+细节见 [game/tourney/README.md](game/tourney/README.md)。
+
+```sh
+cargo run --release -p nes-frontend -- game/tourney/tourney.nes --scale 4
+```
+
 ## 附带游戏:《C172S 五边飞行》
 
 `game/c172s/` 是一个**从零用 6502 汇编写的原创 NES 游戏**(NROM,构建好的

@@ -14,11 +14,13 @@ use std::process::ExitCode;
 struct InputScript {
     events: Vec<(u64, u8)>,
     idx: usize,
+    events2: Vec<(u64, u8)>,
+    idx2: usize,
 }
 
 impl InputScript {
-    fn from_env() -> Self {
-        let mut events: Vec<(u64, u8)> = std::env::var("NES_INPUT")
+    fn parse(var: &str) -> Vec<(u64, u8)> {
+        let mut events: Vec<(u64, u8)> = std::env::var(var)
             .ok()
             .map(|s| {
                 s.split(',')
@@ -30,7 +32,16 @@ impl InputScript {
             })
             .unwrap_or_default();
         events.sort_by_key(|e| e.0);
-        InputScript { events, idx: 0 }
+        events
+    }
+
+    fn from_env() -> Self {
+        InputScript {
+            events: Self::parse("NES_INPUT"),
+            idx: 0,
+            events2: Self::parse("NES_INPUT2"),
+            idx2: 0,
+        }
     }
 
     fn apply(&mut self, nes: &mut Nes, frame: u64) {
@@ -40,6 +51,13 @@ impl InputScript {
             }
             nes.set_input(Port::P1, Buttons(m));
             self.idx += 1;
+        }
+        while let Some(&(f, m)) = self.events2.get(self.idx2) {
+            if f > frame {
+                break;
+            }
+            nes.set_input(Port::P2, Buttons(m));
+            self.idx2 += 1;
         }
     }
 }
