@@ -251,6 +251,31 @@ cheer_t:     .res 1
 boo_t:       .res 1
 gal_prev:    .res 2
 
+; 视觉强化(魂斗罗化)
+shake_t:     .res 1             ; 全屏震动余帧
+rflash:      .res 2             ; 受击白闪帧
+rrecoil:     .res 2             ; 受击后仰帧
+shardC_t:    .res 1
+shardC_x:    .res 1
+shardC_y:    .res 1
+shardD_t:    .res 1
+shardD_x:    .res 1
+shardD_y:    .res 1
+hd_t:        .res 3             ; 蹄尘环形槽
+hd_x:        .res 3
+hd_n:        .res 1
+streak_t:    .res 1             ; 完美固枪速度线
+streak_x:    .res 1
+streak_y:    .res 1
+streak_d:    .res 1
+pen_t:       .res 1             ; 飘旗计时/相位
+pen_ph:      .res 1
+ov_t:        .res 1             ; 观众起立浪余帧
+scene:       .res 1             ; 0 白日 1 黄昏
+att_n:       .res 1             ; 演示轮数(黄昏轮换)
+kb0:         .res 1             ; 骑士姿态瓦片基址(上排)
+kb1:         .res 1             ; (下排)
+
 .segment "BSS"
 ppu_buf:     .res 192
 pal_work:    .res 32
@@ -343,7 +368,11 @@ nmi:
         sta $2000
         lda #0
         sta $2005
-        sta $2005
+        ldx shake_t
+        beq @shk0
+        dec shake_t
+        lda shk_tab-1,x
+@shk0:  sta $2005
         jsr read_pads
         lda game_state
         cmp #ST_TITLE
@@ -575,13 +604,22 @@ str_ptr:
 ; ============================================================================
 
 pal_rebuild:
+        lda scene
+        beq @day
         ldx #0
+@cpd:   lda pal_dusk,x
+        sta pal_work,x
+        inx
+        cpx #32
+        bne @cpd
+        beq @tint
+@day:   ldx #0
 @cp:    lda pal_base,x
         sta pal_work,x
         inx
         cpx #32
         bne @cp
-        ; 对手罩袍色 → sp1 c2($3F15 → pal_work+21)
+@tint:  ; 对手罩袍色 → sp1 c2($3F15 → pal_work+21)
         lda opp_color
         sta pal_work+21
         ; 玩家失德变暗(荣誉 <20 → 蓝袍转黑)
@@ -780,6 +818,10 @@ enter_title:
         lda #0
         sta vs_mode
         sta demo_on
+        sta scene
+        sta pen_t
+        sta ov_t
+        sta shake_t
         sta idle_t
         sta idle_t_hi
         sta st_t
@@ -799,7 +841,31 @@ enter_title:
         jsr pal_rebuild
         jsr load_palettes
 
-        ; 顶部彩旗
+        ; 行 0:城堡天际线;行 1:飘旗;行 2:彩旗横幅
+        lda #$20
+        ldx #$00
+        jsr set_addr
+        ldy #0
+@sky:   tya
+        and #$03
+        tax
+        lda castle_pat,x
+        sta $2007
+        iny
+        cpy #32
+        bne @sky
+        lda #$20
+        ldx #$20
+        jsr set_addr
+        ldy #0
+@pen:   tya
+        and #$01
+        tax
+        lda pen_pat,x
+        sta $2007
+        iny
+        cpy #32
+        bne @pen
         lda #$20
         ldx #$40
         ldy #32
@@ -987,6 +1053,8 @@ enter_howto:
         jsr ppu_off
         jsr oam_clear
         jsr clear_nts
+        lda #0
+        sta scene
         jsr pal_rebuild
         jsr load_palettes
         lda #$20
@@ -1059,6 +1127,7 @@ tick_howto:
         bcc @rts
 @skip:  lda #1
         sta demo_on
+        inc att_n               ; 演示轮换(白日/黄昏)
         lda #0
         sta vs_mode
         lda frame
@@ -1081,6 +1150,23 @@ enter_game:
         jsr oam_clear
         jsr clear_nts
 
+        ; 场景:战役后两战黄昏,演示逢双轮黄昏,对战白日
+        lda #0
+        sta scene
+        lda demo_on
+        beq @sc_c
+        lda att_n
+        and #$01
+        sta scene
+        jmp @sc_d
+@sc_c:  lda vs_mode
+        bne @sc_d
+        lda bout_idx
+        cmp #5
+        bcc @sc_d
+        lda #1
+        sta scene
+@sc_d:
         ; 载入对手
         jsr load_opp
         jsr pal_rebuild
@@ -1104,8 +1190,17 @@ enter_game:
         sta star_t
         sta shardA_t
         sta shardB_t
+        sta shardC_t
+        sta shardD_t
         sta dust_t
         sta plumeoff_t
+        sta hd_t
+        sta hd_t+1
+        sta hd_t+2
+        sta streak_t
+        sta ov_t
+        sta shake_t
+        sta pen_t
         lda #$FF
         sta dq_who
         sta bout_winner
@@ -1120,6 +1215,8 @@ enter_game:
         sta warn_flag,x
         sta rfall,x
         sta rsalute,x
+        sta rflash,x
+        sta rrecoil,x
         lda rseat_max,x
         sta rseat,x
         inx
@@ -1325,37 +1422,55 @@ ai_plan:
 ; ---------------- 竞技场静态画面 ----------------
 
 draw_arena:
-        ; 行 1:彩旗
+        ; 行 0:远景城堡天际线(4 瓦片图案循环)
+        lda #$20
+        ldx #$00
+        jsr set_addr
+        ldy #0
+@sky:   tya
+        and #$03
+        tax
+        lda castle_pat,x
+        sta $2007
+        iny
+        cpy #32
+        bne @sky
+        ; 行 1:飘旗绳(交替两相)
         lda #$20
         ldx #$20
-        ldy #32
-        lda #$0B
-        sta tmp0
-        lda #$20
-        jsr fill_run
-        ; 行 2-4:人群(交替两帧瓦片错落)
+        jsr set_addr
+        ldy #0
+@pen:   tya
+        and #$01
+        tax
+        lda pen_pat,x
+        sta $2007
+        iny
+        cpy #32
+        bne @pen
+        ; 行 2-4:人群(后排暗 + 两排错落)
         lda #$20
         ldx #$40
         ldy #32
-        lda #$08
+        lda #$66
         sta tmp0
         lda #$20
         jsr fill_run
         lda #$20
         ldx #$60
         ldy #32
-        lda #$09
+        lda #$08
         sta tmp0
         lda #$20
         jsr fill_run
         lda #$20
         ldx #$80
         ldy #32
-        lda #$08
+        lda #$09
         sta tmp0
         lda #$20
         jsr fill_run
-        ; 王座包厢 行 1-4 列 13-18
+        ; 王座包厢 行 1-4:条纹华盖 + 帷幔 + 流苏 + 栏杆
         lda #$20
         ldx #$2D
         jsr set_addr
@@ -1369,8 +1484,26 @@ draw_arena:
         lda #$0D
         sta $2007
         lda #$20
-        ldx #$4D
+        ldx #$4C
         jsr set_addr
+        lda #$67
+        sta $2007
+        lda #$0E
+        sta $2007
+        lda #$05
+        sta $2007
+        sta $2007
+        sta $2007
+        sta $2007
+        lda #$0E
+        sta $2007
+        lda #$67
+        sta $2007
+        lda #$20
+        ldx #$6C
+        jsr set_addr
+        lda #$67
+        sta $2007
         lda #$0E
         sta $2007
         lda #$00
@@ -1380,27 +1513,21 @@ draw_arena:
         sta $2007
         lda #$0E
         sta $2007
-        lda #$20
-        ldx #$6D
-        jsr set_addr
-        lda #$0E
-        sta $2007
-        lda #$00
-        sta $2007
-        sta $2007
-        sta $2007
-        sta $2007
-        lda #$0E
+        lda #$67
         sta $2007
         lda #$20
-        ldx #$8D
+        ldx #$8C
         jsr set_addr
+        lda #$67
+        sta $2007
         ldy #6
         lda #$0F
 @rb:    sta $2007
         dey
         bne @rb
-        ; 行 5:横梁;行 6:梁 2;行 7:垂旗
+        lda #$67
+        sta $2007
+        ; 行 5-6:木架横梁;行 7:垂旗
         lda #$20
         ldx #$A0
         ldy #32
@@ -1422,22 +1549,30 @@ draw_arena:
         sta tmp0
         lda #$20
         jsr fill_run
-        ; 行 8-11:草地
-        lda #$21
-        ldx #$00
-        ldy #128
-        sty tmp1
-        lda #$10
-        sta tmp0
+        ; 行 8-9:草地;行 10:割草带;行 11:草丛花点
         lda #$21
         ldx #$00
         jsr set_addr
-        ldy #128
-        lda tmp0
+        ldy #64
+        lda #$10
 @g1:    sta $2007
         dey
         bne @g1
-        ; 行 12:草→沙;行 13-17:沙
+        lda #$21
+        ldx #$40
+        ldy #32
+        lda #$6E
+        sta tmp0
+        lda #$21
+        jsr fill_run
+        lda #$21
+        ldx #$60
+        ldy #32
+        lda #$6D
+        sta tmp0
+        lda #$21
+        jsr fill_run
+        ; 行 12:草坡沿;行 13-14:远沙亮带;行 15:沙中带
         lda #$21
         ldx #$80
         ldy #32
@@ -1448,11 +1583,33 @@ draw_arena:
         lda #$21
         ldx #$A0
         jsr set_addr
-        ldy #160
-        lda #$11
+        ldy #64
+        lda #$69
 @s1:    sta $2007
         dey
         bne @s1
+        lda #$21
+        ldx #$E0
+        ldy #32
+        lda #$11
+        sta tmp0
+        lda #$21
+        jsr fill_run
+        ; 行 16:耙纹;行 17:蹄痕带(马蹄线)
+        lda #$22
+        ldx #$00
+        ldy #32
+        lda #$6C
+        sta tmp0
+        lda #$22
+        jsr fill_run
+        lda #$22
+        ldx #$20
+        ldy #32
+        lda #$6B
+        sta tmp0
+        lda #$22
+        jsr fill_run
         ; 行 18-19:tilt 栅栏
         lda #$22
         ldx #$40
@@ -1489,7 +1646,7 @@ draw_arena:
         jsr set_addr
         lda #$16
         sta $2007
-        ; 行 20:沙→草;行 21-23 草
+        ; 行 20:栏影→草;行 21:草丛;行 22-23:草
         lda #$22
         ldx #$80
         ldy #32
@@ -1499,12 +1656,25 @@ draw_arena:
         jsr fill_run
         lda #$22
         ldx #$A0
-        jsr set_addr
-        ldy #96
+        ldy #32
+        lda #$6D
+        sta tmp0
+        lda #$22
+        jsr fill_run
+        lda #$22
+        ldx #$C0
+        ldy #32
         lda #$10
-@g2:    sta $2007
-        dey
-        bne @g2
+        sta tmp0
+        lda #$22
+        jsr fill_run
+        lda #$22
+        ldx #$E0
+        ldy #32
+        lda #$6D
+        sta tmp0
+        lda #$22
+        jsr fill_run
         ; 行 24:面板顶边;行 25-29:黑
         lda #$23
         ldx #$00
@@ -1797,6 +1967,8 @@ player_input:
         jsr couch_quality
         sta rcq
         jsr sfx_couch
+        ldx #0
+        jsr streak_arm
         ; 高手看破早枪
         lda tmp0
         cmp #CW_EARLY
@@ -1849,6 +2021,8 @@ p2_input:
         jsr couch_quality
         sta rcq+1
         jsr sfx_couch
+        ldx #1
+        jsr streak_arm
 @rts:   rts
 
 ; A=固枪距 → 品质
@@ -1863,6 +2037,30 @@ couch_quality:
         rts
 @late:  lda #Q_GLANCE
         rts
+
+; X=骑手号:完美固枪 → 枪尖速度线
+streak_arm:
+        lda rcq,x
+        cmp #Q_PERFECT
+        bne @rts
+        lda #10
+        sta streak_t
+        lda rdir,x
+        sta streak_d
+        ldy raim,x
+        lda streak_ytab-1,y
+        sta streak_y
+        lda rdir,x
+        bne @l
+        lda rx_hi,x
+        clc
+        adc #18
+        jmp @s
+@l:     lda rx_hi,x
+        sec
+        sbc #18
+@s:     sta streak_x
+@rts:   rts
 
 ; AI(对手,骑手 1)
 ai_foe_tick:
@@ -1888,6 +2086,8 @@ ai_foe_tick:
         jsr couch_quality
         sta rcq+1
         jsr sfx_couch
+        ldx #1
+        jsr streak_arm
 @rts:   rts
 
 ; 演示:骑手 0 由 AI 操控(稳健流:读对手盾,反着打)
@@ -1910,6 +2110,8 @@ ai_player_tick:
         jsr couch_quality
         sta rcq
         jsr sfx_couch
+        ldx #0
+        jsr streak_arm
 @guard: ; 对手已固枪则对位举盾
         lda raim+1
         beq @rts
@@ -2102,6 +2304,8 @@ strike:
         jsr plume_fly
         jsr lance_break
         jsr sfx_clang
+        lda #6
+        sta shake_t
         jmp @dmg
 @breast:
         lda #1
@@ -2129,6 +2333,11 @@ strike:
         clc
         adc sk_pts
         sta rscore,x
+        ; 守方受击白闪 + 后仰
+        lda #8
+        sta rflash,y
+        lda #14
+        sta rrecoil,y
         lda rseat,y
         sec
         sbc sk_dmg
@@ -2138,6 +2347,8 @@ strike:
         sta rseat,y
         lda #90
         sta rfall,y
+        lda #16
+        sta shake_t
         ; 低刺致坠 = 击马犯规,攻方取消资格;否则光明正大的坠马胜
         lda sk_aim
         cmp #AIM_LOW
@@ -2183,19 +2394,28 @@ strike:
 lance_break:
         lda #0
         sta rlance,x
-        ; 断枪屑从交锋点飞出
+        ; 断枪四屑:抛物弧四向飞散
         lda rx_hi,x
         sta shardA_x
+        sta shardC_x
         clc
         adc #8
         sta shardB_x
+        sta shardD_x
         lda #Y_KNIGHT+4
         sta shardA_y
         sta shardB_y
-        lda #24
+        lda #Y_KNIGHT
+        sta shardC_y
+        sta shardD_y
+        lda #14
         sta shardA_t
-        lda #30
+        lda #13
         sta shardB_t
+        lda #12
+        sta shardC_t
+        lda #10
+        sta shardD_t
         rts
 
 plume_fly:
@@ -2569,14 +2789,51 @@ fx_tick:
 @sh:    lda shardA_t
         beq @sb
         dec shardA_t
+        lda shardA_t
+        cmp #9
+        bcc @saDn
+        dec shardA_y
+        jmp @saX
+@saDn:  inc shardA_y
         inc shardA_y
-        dec shardA_x
+@saX:   dec shardA_x
 @sb:    lda shardB_t
-        beq @du
+        beq @sc
         dec shardB_t
+        lda shardB_t
+        cmp #9
+        bcc @sbDn
+        dec shardB_y
+        jmp @sbX
+@sbDn:  inc shardB_y
         inc shardB_y
+@sbX:   inc shardB_x
         inc shardB_x
-        inc shardB_x
+@sc:    lda shardC_t
+        beq @sd
+        dec shardC_t
+        lda shardC_t
+        cmp #6
+        bcc @scDn
+        dec shardC_y
+        dec shardC_y
+        jmp @scX
+@scDn:  inc shardC_y
+@scX:   dec shardC_x
+        dec shardC_x
+@sd:    lda shardD_t
+        beq @du
+        dec shardD_t
+        lda shardD_t
+        cmp #6
+        bcc @sdDn
+        dec shardD_y
+        dec shardD_y
+        jmp @sdX
+@sdDn:  inc shardD_y
+@sdX:   inc shardD_x
+        inc shardD_x
+        inc shardD_x
 @du:    lda dust_t
         beq @pl
         dec dust_t
@@ -2590,12 +2847,222 @@ fx_tick:
         beq @nf
         dec rfall,x
 @nf:    lda rsalute,x
-        beq @nx
+        beq @n2
         dec rsalute,x
+@n2:    lda rflash,x
+        beq @n3
+        dec rflash,x
+@n3:    lda rrecoil,x
+        beq @nx
+        dec rrecoil,x
 @nx:    inx
         cpx #2
         bne @floop
+        lda streak_t
+        beq @st_d
+        dec streak_t
+@st_d:  ldx #2
+@hdd:   lda hd_t,x
+        beq @hdd_n
+        dec hd_t,x
+@hdd_n: dex
+        bpl @hdd
+        ; 蹄尘生成:冲锋中每 8 帧一朵(双骑错开)
+        lda pass_st
+        cmp #PS_CHARGE
+        bne @nhsp
+        lda frame
+        and #$07
+        bne @h1
+        ldx #0
+        beq @hsp
+@h1:    cmp #$04
+        bne @nhsp
+        ldx #1
+@hsp:   lda rv_hi,x
+        beq @nhsp
+        stx tmp3
+        ldy hd_n
+        iny
+        cpy #3
+        bcc @hn
+        ldy #0
+@hn:    sty hd_n
+        ldx tmp3
+        lda rdir,x
+        bne @hL
+        lda rx_hi,x
+        sec
+        sbc #12
+        jmp @hx
+@hL:    lda rx_hi,x
+        clc
+        adc #12
+@hx:    ldy hd_n
+        sta hd_x,y
+        lda #8
+        sta hd_t,y
+@nhsp:
+        ; 飘旗:游戏/标题下每 32 帧换相
+        lda fade_mode
+        bne @pen_d
+        lda game_state
+        cmp #ST_GAME
+        beq @pen_g
+        cmp #ST_TITLE
+        bne @pen_d
+@pen_g: inc pen_t
+        lda pen_t
+        and #$1F
+        bne @pen_d
+        lda buf_w
+        cmp #110
+        bcs @pen_d
+        lda pen_ph
+        eor #$01
+        sta pen_ph
+        jsr pen_rows_emit
+@pen_d:
+        ; 观众起立浪(大欢呼:举臂两行,浪毕恢复)
+        lda ov_t
+        beq @ov_d
+        lda game_state
+        cmp #ST_GAME
+        beq @ov_g
+        lda #0
+        sta ov_t
+        beq @ov_d
+@ov_g:  dec ov_t
+        lda ov_t
+        cmp #118
+        bne @o2
+        lda #$65
+        ldx #0
+        jsr crowd_row_emit
+        jmp @ov_d
+@o2:    cmp #116
+        bne @o3
+        lda #$65
+        ldx #1
+        jsr crowd_row_emit
+        jmp @ov_d
+@o3:    cmp #4
+        bne @o4
+        lda #$08
+        ldx #0
+        jsr crowd_row_emit
+        jmp @ov_d
+@o4:    cmp #2
+        bne @ov_d
+        lda #$09
+        ldx #1
+        jsr crowd_row_emit
+@ov_d:  rts
+
+; 飘旗行重写:两段(跳过包厢列 13-18)
+pen_rows_emit:
+        ldy buf_w
+        lda #$20
+        sta ppu_buf,y
+        iny
+        lda #$20
+        sta ppu_buf,y
+        iny
+        lda #13
+        sta ppu_buf,y
+        iny
+        ldx #0
+@p1:    txa
+        clc
+        adc pen_ph
+        and #$01
+        stx tmp4
+        tax
+        lda pen_pat,x
+        ldx tmp4
+        sta ppu_buf,y
+        iny
+        inx
+        cpx #13
+        bne @p1
+        lda #$20
+        sta ppu_buf,y
+        iny
+        lda #$33
+        sta ppu_buf,y
+        iny
+        lda #13
+        sta ppu_buf,y
+        iny
+        ldx #0
+@p2:    txa
+        clc
+        adc pen_ph
+        and #$01
+        stx tmp4
+        tax
+        lda pen_pat,x
+        ldx tmp4
+        sta ppu_buf,y
+        iny
+        inx
+        cpx #13
+        bne @p2
+        lda #$FF
+        sta ppu_buf,y
+        sty buf_w
         rts
+
+; A=瓦片 X=0(行3)/1(行4):人群行两段重写(跳过包厢列 12-19)
+crowd_row_emit:
+        sta tmp4
+        stx tmp5
+        lda buf_w
+        cmp #110
+        bcs @rts
+        ldy buf_w
+        lda #$20
+        sta ppu_buf,y
+        iny
+        lda tmp5
+        beq @r3a
+        lda #$80
+        bne @r3b
+@r3a:   lda #$60
+@r3b:   sta ppu_buf,y
+        iny
+        lda #12
+        sta ppu_buf,y
+        iny
+        ldx #12
+@f1:    lda tmp4
+        sta ppu_buf,y
+        iny
+        dex
+        bne @f1
+        lda #$20
+        sta ppu_buf,y
+        iny
+        lda tmp5
+        beq @r4a
+        lda #$94
+        bne @r4b
+@r4a:   lda #$74
+@r4b:   sta ppu_buf,y
+        iny
+        lda #12
+        sta ppu_buf,y
+        iny
+        ldx #12
+@f2:    lda tmp4
+        sta ppu_buf,y
+        iny
+        dex
+        bne @f2
+        lda #$FF
+        sta ppu_buf,y
+        sty buf_w
+@rts:   rts
 
 ; ============================================================================
 ; HUD
@@ -2925,15 +3392,62 @@ build_oam:
         jsr draw_rider
         ldx #1
         jsr draw_rider
-        ; 特效
+        ; 特效:交锋爆裂(16×16 三帧:白芯→尖环→火花)
         lda star_t
         beq @sh
-        lda star_y
-        ldx #$1E
-        ldy #$03
-        sta tmp2
+        cmp #9
+        bcc @b2
+        lda #$4A
+        bne @bgo
+@b2:    cmp #5
+        bcc @b3
+        lda #$4C
+        bne @bgo
+@b3:    lda #$4E
+@bgo:   sta ms_t
         lda star_x
+        sec
+        sbc #8
         sta tmp0
+        lda star_y
+        sec
+        sbc #8
+        sta tmp2
+        ldx ms_t
+        ldy #$03
+        lda tmp2
+        jsr put_spr
+        lda tmp0
+        clc
+        adc #8
+        sta tmp0
+        ldx ms_t
+        inx
+        ldy #$03
+        lda tmp2
+        jsr put_spr
+        lda tmp0
+        sec
+        sbc #8
+        sta tmp0
+        lda ms_t
+        clc
+        adc #$10
+        sta ms_t
+        tax
+        ldy #$03
+        lda tmp2
+        clc
+        adc #8
+        sta tmp2
+        jsr put_spr
+        lda tmp0
+        clc
+        adc #8
+        sta tmp0
+        ldx ms_t
+        inx
+        ldy #$03
         lda tmp2
         jsr put_spr
 @sh:    lda shardA_t
@@ -2945,12 +3459,28 @@ build_oam:
         ldy #$03
         jsr put_spr
 @sb:    lda shardB_t
-        beq @du
+        beq @sc
         lda shardB_x
         sta tmp0
         lda shardB_y
         ldx #$1B
         ldy #$03
+        jsr put_spr
+@sc:    lda shardC_t
+        beq @sd
+        lda shardC_x
+        sta tmp0
+        lda shardC_y
+        ldx #$0F
+        ldy #$43
+        jsr put_spr
+@sd:    lda shardD_t
+        beq @du
+        lda shardD_x
+        sta tmp0
+        lda shardD_y
+        ldx #$1B
+        ldy #$43
         jsr put_spr
 @du:    lda dust_t
         beq @pl
@@ -2965,6 +3495,50 @@ build_oam:
 @dgo:   lda #Y_HORSE+8
         ldy #$03
         jsr put_spr
+        ; 蹄下扬尘(三槽)
+@hd:    ldx #2
+@hdl:   stx tmp3
+        lda hd_t,x
+        beq @hdn
+        lda hd_x,x
+        sta tmp0
+        ldx tmp3
+        lda hd_t,x
+        cmp #5
+        bcs @hda
+        ldx #$3D
+        bne @hdt
+@hda:   ldx #$3C
+@hdt:   ldy #$02
+        lda #Y_HORSE+9
+        jsr put_spr
+@hdn:   ldx tmp3
+        dex
+        bpl @hdl
+        ; 完美固枪速度线(枪尖拖尾两段)
+        lda streak_t
+        beq @str_n
+        lda streak_x
+        sta tmp0
+        lda streak_y
+        ldx #$3E
+        ldy #$03
+        jsr put_spr
+        lda streak_d
+        beq @str_r
+        lda streak_x
+        clc
+        adc #8
+        jmp @str_s
+@str_r: lda streak_x
+        sec
+        sbc #8
+@str_s: sta tmp0
+        lda streak_y
+        ldx #$3E
+        ldy #$03
+        jsr put_spr
+@str_n:
 @pl:    lda plumeoff_t
         beq @roy
         lda plumeoff_x
@@ -3009,19 +3583,22 @@ horse_draw:
         lda ranim,x
         lsr a
         lsr a
-        lsr a
-        and #$01
-        beq @fa
-        lda #$04
-        bne @fb
-@fa:    lda #$00
-@fb:    sta ms_t
+        and #$03
+        tay
+        lda hframe_tab,y
+        sta ms_t
         lda rdir,x
         beq @fr
         lda #$42
         bne @fat
 @fr:    lda #$02
 @fat:   sta ms_at
+        lda rflash,x
+        beq @nfl
+        lda ms_at
+        ora #$03
+        sta ms_at
+@nfl:
         lda #0
         sta ms_i
 @loop:  lda ms_i
@@ -3093,6 +3670,21 @@ knight_draw:
         beq @c2
 @c1:    lda #$01
 @c2:    sta ms_at
+        ; 受击后仰姿态 + 白闪
+        lda rrecoil,x
+        beq @kb_n
+        lda #$48
+        bne @kb_s
+@kb_n:  lda #$08
+@kb_s:  sta kb0
+        ora #$10
+        sta kb1
+        lda rflash,x
+        beq @kf_n
+        lda ms_at
+        ora #$03
+        sta ms_at
+@kf_n:
         lda rdir,x
         beq @right
         lda ms_at
@@ -3106,7 +3698,8 @@ knight_draw:
         lda ms_t
         sta tmp0
         lda kny
-        ldx #$09
+        ldx kb0
+        inx
         ldy ms_at
         jsr put_spr
         lda ms_t
@@ -3114,7 +3707,7 @@ knight_draw:
         adc #8
         sta tmp0
         lda kny
-        ldx #$08
+        ldx kb0
         ldy ms_at
         jsr put_spr
         lda ms_t
@@ -3122,7 +3715,8 @@ knight_draw:
         lda kny
         clc
         adc #8
-        ldx #$19
+        ldx kb1
+        inx
         ldy ms_at
         jsr put_spr
         lda ms_t
@@ -3132,7 +3726,7 @@ knight_draw:
         lda kny
         clc
         adc #8
-        ldx #$18
+        ldx kb1
         ldy ms_at
         jsr put_spr
         rts
@@ -3143,7 +3737,7 @@ knight_draw:
         lda ms_t
         sta tmp0
         lda kny
-        ldx #$08
+        ldx kb0
         ldy ms_at
         jsr put_spr
         lda ms_t
@@ -3151,7 +3745,8 @@ knight_draw:
         adc #8
         sta tmp0
         lda kny
-        ldx #$09
+        ldx kb0
+        inx
         ldy ms_at
         jsr put_spr
         lda ms_t
@@ -3159,7 +3754,7 @@ knight_draw:
         lda kny
         clc
         adc #8
-        ldx #$18
+        ldx kb1
         ldy ms_at
         jsr put_spr
         lda ms_t
@@ -3169,7 +3764,8 @@ knight_draw:
         lda kny
         clc
         adc #8
-        ldx #$19
+        ldx kb1
+        inx
         ldy ms_at
         jsr put_spr
         rts
@@ -3500,7 +4096,18 @@ enter_inter:
         jsr ppu_off
         jsr oam_clear
         jsr clear_nts
-        jsr load_opp
+        ; 战报卡随下一战场景着色(后两战黄昏)
+        lda #0
+        sta scene
+        lda vs_mode
+        ora demo_on
+        bne @sc_d
+        lda bout_idx
+        cmp #5
+        bcc @sc_d
+        lda #1
+        sta scene
+@sc_d:  jsr load_opp
         jsr pal_rebuild
         jsr load_palettes
         ; BOUT n
@@ -3796,6 +4403,8 @@ cheer_small:
 cheer_big:
         lda #110
         sta cheer_t
+        lda #120
+        sta ov_t                ; 观众起立浪
         rts
 
 boo_start:
@@ -4003,34 +4612,51 @@ music_tick:
 .segment "RODATA"
 
 pal_base:
-        ; BG:0 面板/字 1 看台 2 场地 3 王座/栅栏
+        ; BG:0 面板/字 1 看台 2 草地 3 沙地/栅栏/王座
         .byte $22,$0F,$16,$30
         .byte $22,$0F,$27,$16
-        .byte $22,$0F,$19,$27
-        .byte $22,$0F,$28,$30
+        .byte $22,$0F,$19,$29
+        .byte $22,$0F,$27,$37
         ; SPR:0 玩家蓝 1 对手(c2 动态) 2 马 3 金效果
         .byte $22,$0F,$12,$30
         .byte $22,$0F,$16,$30
         .byte $22,$0F,$17,$27
         .byte $22,$0F,$28,$30
 
-; 属性表 64 字节(每字节 4 象限)
+pal_dusk:
+        ; 黄昏决赛:橙天/暖沙/长影
+        .byte $26,$0F,$16,$30
+        .byte $26,$0F,$27,$06
+        .byte $26,$0F,$08,$18
+        .byte $26,$0F,$17,$27
+        .byte $26,$0F,$12,$30
+        .byte $26,$0F,$16,$30
+        .byte $26,$0F,$07,$17
+        .byte $26,$0F,$28,$30
+
+; 城堡天际线图案 / 飘旗两相 / 震动衰减表 / 奔跑四相帧基址
+castle_pat: .byte $61,$60,$61,$62
+pen_pat:    .byte $63,$64
+shk_tab:    .byte 1,255,1,255,2,254,2,254,3,253,3,253,2,254,3,253
+hframe_tab: .byte $00,$04,$40,$44
+streak_ytab:.byte Y_KNIGHT+2,Y_KNIGHT+7,Y_KNIGHT+13
+
+; 属性表 64 字节(每字节 2×2 瓦片象限,4 列/字节)
 attr_tab:
-        ; 行 0-3(看台 pal1;包厢列 6-9 → pal3)
-        .byte $55,$55,$55,$55,$55,$55,$FF,$FF,$FF,$FF,$55,$55,$55,$55,$55,$55
-        ; 行 4-7(看台下沿 pal1)
-        .byte $55,$55,$55,$55,$55,$55,$55,$55
-        ; 行 8-11(草地 pal2)
+        ; 行 0-3:看台 pal1;包厢列 12-19(字节 3-4)→ pal3
+        .byte $55,$55,$55,$FF,$FF,$55,$55,$55
+        ; 行 4-7:看台下沿 pal1;包厢栏杆(行 4-5 列 12-19)上象限 pal3
+        .byte $55,$55,$55,$5F,$5F,$55,$55,$55
+        ; 行 8-11:草地 pal2
         .byte $AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA
-        ; 行 12-15(沙地 pal2)
+        ; 行 12-15:沙地 pal3(沙褐/米白)
+        .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+        ; 行 16-19:沙 + 栅栏,全 pal3
+        .byte $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+        ; 行 20-23:草 pal2
         .byte $AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA
-        ; 行 16-19(上沙 pal2 下栅栏 pal3)
-        .byte $FA,$FA,$FA,$FA,$FA,$FA,$FA,$FA
-        ; 行 20-23(草 pal2)
-        .byte $AA,$AA,$AA,$AA,$AA,$AA,$AA,$AA
-        ; 行 24-27(面板 pal0)
+        ; 行 24-29:面板 pal0
         .byte $00,$00,$00,$00,$00,$00,$00,$00
-        ; 行 28-29
         .byte $00,$00,$00,$00,$00,$00,$00,$00
 
 ; 大字 TOURNEY(上排/下排瓦片号)
