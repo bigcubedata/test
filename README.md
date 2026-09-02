@@ -86,8 +86,11 @@ Options = Start,十字键与左摇杆等效。
 | macOS 桌面 | gilrs(IOKit) | 内置 HID 驱动直连 |
 | 浏览器 | Gamepad API 标准映射 | Gamepad API(Chrome/Edge/Firefox 蓝牙直连) |
 
-- **按键错位/无效(常见于山寨或老式 USB 手柄、DirectInput 模式手柄:往往只有
-  Start 对得上)**:按 **F9** 进入按键学习,按屏幕/标题栏提示依次按 A、B、Select、
+- **国产 D-Input 手柄(北通/莱仕达等,PS 序 △○✕□ 布局)Windows 下开箱即用**:
+  gilrs 无 SDL 条目时按 Xbox 序猜面键会错位、方向帽会被忽略;现在按 WGI 原始码
+  解码——序号 1 = 右键 = A,0/2/3 = B,8/9 = Select/Start,方向帽 Switch 轴 = 十字键。
+  北通蝙蝠 2 这类双模手柄切到 X-Input 模式也可以(见说明书/背面模式开关)。
+- **按键错位/无效(其他冷门手柄)**:按 **F9** 进入按键学习,按屏幕/标题栏提示依次按 A、B、Select、
   Start、上、下、左、右(再按 F9 跳过没有的键),按键与方向帽/摇杆都按原始码记录,
   桌面端按手柄名存到 `~/.rnes-padmap.txt`、网页端存 localStorage,下次自动套用。
   默认映射也已兼容方向帽轴(DPadX/DPadY)、Linux evdev 原始键码与非标准映射的

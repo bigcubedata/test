@@ -198,6 +198,32 @@ fn map_raw(_code: u32) -> Option<Buttons> {
     None
 }
 
+/// Windows WGI 原始控制器(D-Input 手柄,无 SDL 条目时 gilrs 只有按序号猜的
+/// Xbox 序默认映射):原始码 = 类别<<16 | 序号(0 按键 / 1 轴 / 2 方向帽)。
+/// 面键取两大家族的交集——PS 序(△○✕□ = 0123,北通/多数国产手柄)与
+/// Xbox 序(ABXY = 0123)里,序号 1 都是右键 = NES A,序号 0/2/3 归 NES B;
+/// 8/9 = Select/Start。这样两大家族的 A/B/Start 不学习也对。
+fn map_wgi_raw_button(code: u32) -> Option<Buttons> {
+    if code >> 16 != 0 {
+        return None;
+    }
+    match code & 0xFFFF {
+        1 => Some(Buttons::A),
+        0 | 2 | 3 => Some(Buttons::B),
+        8 => Some(Buttons::SELECT),
+        9 => Some(Buttons::START),
+        _ => None,
+    }
+}
+
+/// WGI 方向帽:Switch 类轴码,偶数 = X(左 -1 / 右 +1),奇数 = Y(上 -1 / 下 +1)
+fn wgi_switch_axis(code: u32) -> Option<bool> {
+    if code >> 16 != 2 {
+        return None;
+    }
+    Some(code & 1 == 1)
+}
+
 fn map_path() -> Option<PathBuf> {
     if let Some(p) = std::env::var_os("NES_PAD_MAP_FILE") {
         return Some(PathBuf::from(p));
@@ -268,6 +294,14 @@ impl GilrsPads {
         }
         println!("手柄提示:若按键错位/无效,按 F9 进入按键学习(依次按 A B SELECT START 上 下 左 右)");
         pads
+    }
+
+    /// gilrs 对该手柄只有默认映射(无 SDL 条目)——Windows 下即 WGI 原始控制器
+    fn driver_mapped(&self, id: GamepadId) -> bool {
+        self.gilrs
+            .as_ref()
+            .map(|g| g.gamepad(id).mapping_source() == gilrs::MappingSource::Driver)
+            .unwrap_or(false)
     }
 
     fn pad_name(&self, id: GamepadId) -> String {
@@ -436,16 +470,31 @@ impl GilrsPads {
                     continue;
                 }
             }
+            let wgi_raw = cfg!(target_os = "windows") && self.driver_mapped(ev.id);
             match ev.event {
                 EventType::ButtonPressed(b, code) | EventType::ButtonReleased(b, code) => {
                     let pressed = matches!(ev.event, EventType::ButtonPressed(..));
-                    let target = map_button(b).or_else(|| map_raw(code.into_u32()));
+                    let raw = code.into_u32();
+                    let target = if wgi_raw { map_wgi_raw_button(raw) } else { None };
+                    let target = target.or_else(|| map_button(b)).or_else(|| map_raw(raw));
                     if let Some(target) = target {
                         self.slots[slot].buttons.set(target, pressed);
                     }
                 }
-                EventType::AxisChanged(axis, v, _) => {
+                EventType::AxisChanged(axis, v, code) => {
                     let a = &mut self.slots[slot].axis;
+                    if wgi_raw {
+                        if let Some(is_y) = wgi_switch_axis(code.into_u32()) {
+                            if is_y {
+                                a.set(Buttons::UP, v < -DEADZONE);
+                                a.set(Buttons::DOWN, v > DEADZONE);
+                            } else {
+                                a.set(Buttons::LEFT, v < -DEADZONE);
+                                a.set(Buttons::RIGHT, v > DEADZONE);
+                            }
+                            continue;
+                        }
+                    }
                     match axis {
                         Axis::LeftStickX | Axis::DPadX => {
                             a.set(Buttons::LEFT, v < -DEADZONE);
@@ -486,6 +535,21 @@ mod tests {
             "a=b:305 b=b:304 select=- start=b:315 up=a:17- down=a:17+ left=- right=-"
         );
         assert_eq!(PadMap::parse(&s).unwrap(), m);
+    }
+
+    #[test]
+    fn wgi_raw_codes() {
+        // 类别<<16 | 序号:按键 0-3 面键,8/9 Select/Start;方向帽 Switch 类
+        assert_eq!(map_wgi_raw_button(1), Some(Buttons::A));
+        assert_eq!(map_wgi_raw_button(2), Some(Buttons::B));
+        assert_eq!(map_wgi_raw_button(0), Some(Buttons::B));
+        assert_eq!(map_wgi_raw_button(8), Some(Buttons::SELECT));
+        assert_eq!(map_wgi_raw_button(9), Some(Buttons::START));
+        assert_eq!(map_wgi_raw_button(4), None);
+        assert_eq!(map_wgi_raw_button(0x10000), None); // 轴不是按键
+        assert_eq!(wgi_switch_axis(0x20000), Some(false));
+        assert_eq!(wgi_switch_axis(0x20001), Some(true));
+        assert_eq!(wgi_switch_axis(0x10001), None);
     }
 
     #[test]
