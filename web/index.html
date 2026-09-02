@@ -23,7 +23,8 @@
 </div>
 <canvas id="screen" width="256" height="240"></canvas>
 <div class="hint">键盘:方向键 + Z=B X=A + 回车=Start 右Shift=Select;
-手柄:USB/蓝牙(含 PS5 DualSense)即插即用,第 1/2 只 → P1/P2 <span id="pads"></span></div>
+手柄:USB/蓝牙(含 PS5 DualSense)即插即用,第 1/2 只 → P1/P2 <span id="pads"></span>
+<button id="padlearn" title="按键错位/无效时:依次按 A B SELECT START 上 下 左 右">手柄映射(F9)</button> <span id="learn" class="hint"></span></div>
 <script type="module">
 const W = 256, H = 240;
 const status = document.getElementById('status');
@@ -46,6 +47,7 @@ const KEYMAP = {
   KeyZ: 0x02, KeyX: 0x01, Enter: 0x08, ShiftRight: 0x04,
 };
 addEventListener('keydown', e => {
+  if (e.code === 'F9') { learnKey(); e.preventDefault(); return; }
   const b = KEYMAP[e.code];
   if (b !== undefined) { buttons |= b; e.preventDefault(); }
 });
@@ -92,9 +94,86 @@ function startAudio() {
 }
 
 const padStatus = document.getElementById('pads');
+const learnEl = document.getElementById('learn');
+// ---- 自定义映射(按手柄 id 存 localStorage):bind = {t:'b',i} 或 {t:'a',i,s:±1} ----
+const NES_NAMES = ['A', 'B', 'SELECT', 'START', '上', '下', '左', '右'];
+const NES_BITS = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80];
+let padMaps = {};
+try { padMaps = JSON.parse(localStorage.getItem('rnes_padmap') || '{}'); } catch (e) { padMaps = {}; }
+let learn = null; // {step, binds, prevB, prevA, id, cooldown}
+
+function startLearn() {
+  learn = { step: 0, binds: [], prevB: null, prevA: null, id: null, cooldown: performance.now() + 300 };
+  showLearn();
+}
+function showLearn() {
+  if (!learnEl) return;
+  learnEl.textContent = learn ? `学习 ${learn.step + 1}/8:请在手柄上按 [${NES_NAMES[learn.step]}](F9 跳过)` : '';
+}
+function finishLearn() {
+  if (learn.id) {
+    padMaps[learn.id] = learn.binds;
+    try { localStorage.setItem('rnes_padmap', JSON.stringify(padMaps)); } catch (e) {}
+    if (learnEl) learnEl.textContent = '映射已保存(' + learn.id.slice(0, 24) + ')';
+  } else if (learnEl) learnEl.textContent = '未收到手柄输入,未保存';
+  learn = null;
+}
+function learnTick(gps) {
+  if (!learn || performance.now() < learn.cooldown) return;
+  for (const gp of gps) {
+    if (learn.id && gp.id !== learn.id) continue;
+    const curB = gp.buttons.map(b => b.pressed);
+    const curA = Array.from(gp.axes);
+    const known = learn.id === gp.id && learn.prevB;
+    const prevB = known ? learn.prevB : curB.map(() => false);
+    const prevA = known ? learn.prevA : curA; // 首见时以当前轴位为基准,静止偏置不算动作
+    let bind = null;
+    for (let i = 0; i < curB.length; i++) if (curB[i] && !prevB[i]) { bind = { t: 'b', i }; break; }
+    if (!bind) for (let j = 0; j < curA.length; j++) {
+      const v = curA[j], pv = prevA[j] || 0;
+      if (Math.abs(v) > 0.6 && Math.abs(v) <= 1.0 && Math.abs(pv) < 0.3) { bind = { t: 'a', i: j, s: v > 0 ? 1 : -1 }; break; }
+    }
+    if (!learn.id) {
+      if (!bind) continue;           // 尚未认领:出现动作的手柄才成为学习对象
+      learn.id = gp.id;
+    }
+    learn.prevB = curB; learn.prevA = curA;
+    if (bind) {
+      learn.binds[learn.step] = bind;
+      learn.step++;
+      learn.cooldown = performance.now() + 300;
+      if (learn.step >= 8) { finishLearn(); return; }
+      showLearn();
+    }
+  }
+}
+function learnKey() {
+  if (!learn) { startLearn(); return; }
+  learn.binds[learn.step] = null;
+  learn.step++;
+  learn.cooldown = performance.now() + 300;
+  if (learn.step >= 8) finishLearn(); else showLearn();
+}
+document.getElementById('padlearn')?.addEventListener('click', learnKey);
+
+// 非标准映射手柄常见的方向帽单轴(axes[9]):-1 上 → 顺时针 8 档,松开 ≈ 1.29
+function hatMask(v) {
+  if (typeof v !== 'number' || v > 1.05 || v < -1.05) return 0;
+  const idx = Math.round((v + 1) * 3.5) & 7;
+  return [0x10, 0x90, 0x80, 0xA0, 0x20, 0x60, 0x40, 0x50][idx];
+}
 function padMask(gp) {
   if (!gp) return 0;
   let m = 0;
+  const custom = padMaps[gp.id];
+  if (custom) {
+    custom.forEach((bd, k) => {
+      if (!bd) return;
+      if (bd.t === 'b') { if (gp.buttons[bd.i] && gp.buttons[bd.i].pressed) m |= NES_BITS[k]; }
+      else { const v = gp.axes[bd.i] || 0; if (bd.s > 0 ? v > 0.5 : v < -0.5) m |= NES_BITS[k]; }
+    });
+    return m;
+  }
   const b = i => gp.buttons[i] && gp.buttons[i].pressed;
   // 标准映射:0=下(✕) 1=右(○) 2=左(□) 3=上(△) 8=Select/Create 9=Start/Options 12-15=十字键
   if (b(1) || b(3)) m |= 0x01;            // NES A
@@ -110,11 +189,14 @@ function padMask(gp) {
   if (ax > 0.5) m |= 0x80;
   if (ay < -0.5) m |= 0x10;
   if (ay > 0.5) m |= 0x20;
+  if (gp.mapping !== 'standard') m |= hatMask(gp.axes[9]);
   return m;
 }
 function pollPads() {
   const gps = (navigator.getGamepads ? navigator.getGamepads() : []).filter(g => g);
-  if (padStatus) padStatus.textContent = gps.length ? `(已连接 ${gps.length} 只)` : '';
+  if (padStatus) padStatus.textContent = gps.length ? `(已连接 ${gps.length} 只${gps.some(g => padMaps[g.id]) ? ',已套用自定义映射' : ''})` : '';
+  learnTick(gps);
+  if (learn) return [0, 0];
   return [padMask(gps[0]), padMask(gps[1])];
 }
 

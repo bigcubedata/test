@@ -33,9 +33,14 @@ fn parse_report(buf: &[u8], n: usize) -> Option<Buttons> {
     if n < 10 {
         return None;
     }
+    // Windows 的 HID 读取会把报文补零到最大长度:蓝牙基础报文(10 字节)也会以
+    // 64/78 字节到达。USB 完整报文 [12..32) 含时间戳/陀螺仪,几乎不可能全零,
+    // 据此区分。
+    let padded_basic =
+        buf[0] == 0x01 && n >= 32 && buf[12..32.min(n)].iter().all(|&b| b == 0);
     let (stick_off, btn_off) = match (buf[0], n) {
-        (0x01, len) if len >= 32 => (1usize, 8usize), // USB 完整报文
-        (0x01, _) => (1, 5),                          // 蓝牙基础报文
+        (0x01, len) if len >= 32 && !padded_basic => (1usize, 8usize), // USB 完整报文
+        (0x01, _) => (1, 5),                          // 蓝牙基础报文(含补零)
         (0x31, _) => (2, 9),                          // 蓝牙增强报文
         _ => return None,
     };
@@ -120,6 +125,13 @@ mod tests {
         buf[stick_off + 2] = 128;
         buf[stick_off + 3] = 128;
         buf[btn_off] = 0x08; // 方向帽松开
+        if btn_off == 8 {
+            // 真实 USB 报文:静止时加速度有重力分量、传感器时间戳递增,不会全零
+            buf[22] = 0xE0;
+            buf[23] = 0xDF;
+            buf[24] = 0x5A;
+            buf[25] = 0x11;
+        }
     }
 
     #[test]
@@ -160,6 +172,20 @@ mod tests {
         neutral(&mut buf, 1, 5);
         buf[5] = 0x08 | 0x80; // △ → A
         assert_eq!(parse_report(&buf, 10).unwrap().0, Buttons::A.0);
+    }
+
+    #[test]
+    fn bt_simple_report_padded_by_windows() {
+        // 10 字节基础报文被补零到 78:按键区仍应从 [5] 读
+        let mut buf = [0u8; 78];
+        buf[0] = 0x01;
+        neutral(&mut buf, 1, 5);
+        buf[5] = 0x08 | 0x40; // ○ → A
+        buf[6] = 0x20; // Options → START
+        assert_eq!(
+            parse_report(&buf, 78).unwrap().0,
+            Buttons::A.0 | Buttons::START.0
+        );
     }
 
     #[test]
@@ -206,6 +232,11 @@ fn manager(shared: Arc<Mutex<[Buttons; 2]>>) {
                     match api.open_path(std::ffi::CString::new(path.clone()).unwrap().as_c_str()) {
                         Ok(dev) => {
                             println!("DualSense → P{slot_n}", slot_n = slot + 1);
+                            // 读一次校准特征报文 0x05:蓝牙下手柄据此切换到增强
+                            // 报文(0x31,含完整按键区),USB 下无副作用
+                            let mut cal = [0u8; 41];
+                            cal[0] = 0x05;
+                            let _ = dev.get_feature_report(&mut cal);
                             open[slot] = Some((path, dev));
                         }
                         Err(e) => eprintln!("DualSense 打开失败({e});Linux 请检查 hidraw 权限"),

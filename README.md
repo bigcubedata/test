@@ -71,6 +71,7 @@ ROM 请自备,仓库不含任何商业游戏(`test-roms/` 为社区自由分发�
 | 方向键 / Z / X / 回车 / 右Shift | 十字键 / B / A / Start / Select |
 | F2 / F4 / 1-8(桌面) | 存档 / 读档 / 选槽 |
 | R / P / Tab / Esc(桌面) | 复位 / 暂停 / 快进 / 退出 |
+| F9(桌面/网页) | **手柄按键学习**:依次按 A B Select Start 上 下 左 右,任何手柄都能对上 |
 
 ### 手柄(USB 通用 + PS5 DualSense 蓝牙)
 
@@ -85,7 +86,13 @@ Options = Start,十字键与左摇杆等效。
 | macOS 桌面 | gilrs(IOKit) | 内置 HID 驱动直连 |
 | 浏览器 | Gamepad API 标准映射 | Gamepad API(Chrome/Edge/Firefox 蓝牙直连) |
 
-- 自定义映射:桌面端支持 `SDL_GAMECONTROLLERCONFIG` 环境变量(SDL 映射串)。
+- **按键错位/无效(常见于山寨或老式 USB 手柄、DirectInput 模式手柄:往往只有
+  Start 对得上)**:按 **F9** 进入按键学习,按屏幕/标题栏提示依次按 A、B、Select、
+  Start、上、下、左、右(再按 F9 跳过没有的键),按键与方向帽/摇杆都按原始码记录,
+  桌面端按手柄名存到 `~/.rnes-padmap.txt`、网页端存 localStorage,下次自动套用。
+  默认映射也已兼容方向帽轴(DPadX/DPadY)、Linux evdev 原始键码与非标准映射的
+  hat 单轴。排查用 `NES_PAD_DEBUG=1` 打印每个原始事件。
+- 自定义映射(高级):桌面端支持 `SDL_GAMECONTROLLERCONFIG` 环境变量(SDL 映射串)。
 - Linux 老内核(<5.12 无 hid-playstation)可 `NES_DUALSENSE_HID=1` 启用内置驱动;
   若 hidraw 权限不足,添加 udev 规则:
   `SUBSYSTEM=="hidraw", ATTRS{idVendor}=="054c", MODE="0660", TAG+="uaccess"`。

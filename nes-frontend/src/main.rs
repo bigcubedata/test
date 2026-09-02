@@ -143,6 +143,12 @@ impl App {
             KeyCode::KeyX => map(Buttons::A, pressed, &mut self.buttons),
             KeyCode::Enter => map(Buttons::START, pressed, &mut self.buttons),
             KeyCode::ShiftRight => map(Buttons::SELECT, pressed, &mut self.buttons),
+            KeyCode::F9 => {
+                #[cfg(feature = "gamepad")]
+                if pressed {
+                    self.pads.learn_key();
+                }
+            }
             KeyCode::Tab => self.fast_forward = pressed,
             _ if !pressed => {}
             KeyCode::KeyP => self.paused = !self.paused,
@@ -208,7 +214,24 @@ impl App {
 
     fn poll_pads(&mut self) {
         #[cfg(feature = "gamepad")]
-        self.pads.poll();
+        {
+            self.pads.poll();
+            if self.pads.take_status_dirty() {
+                if let Some(w) = &self.window {
+                    match self.pads.learn_status() {
+                        Some(s) => w.set_title(&s),
+                        None => w.set_title(&self.base_title()),
+                    }
+                }
+            }
+        }
+    }
+
+    fn base_title(&self) -> String {
+        format!(
+            "nes — {}",
+            self.rom_path.file_name().unwrap_or_default().to_string_lossy()
+        )
     }
 }
 
